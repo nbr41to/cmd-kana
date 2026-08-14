@@ -1,0 +1,35 @@
+name: Release candidate
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
+      - name: Verify tag and app version
+        if: github.ref_type == 'tag'
+        run: |
+          app_version=$(plutil -extract CFBundleShortVersionString raw app/Info.plist)
+          test "v$app_version" = "$GITHUB_REF_NAME"
+      - name: Run release checks
+        run: ./scripts/check.sh
+      - name: Build release candidate
+        run: ./scripts/archive.sh
+      - name: Upload release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmd-kana-release-candidate
+          path: |
+            target/dist/*.zip
+            target/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30

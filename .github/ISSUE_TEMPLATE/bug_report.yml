@@ -1,0 +1,53 @@
+name: Bug report
+description: Report a reproducible cmd-kana problem
+title: "[Bug] "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: cmd-kana version
+      description: Shown in the settings window or menu.
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS and Mac
+      placeholder: macOS 26.x, Apple silicon
+    validations:
+      required: true
+  - type: input
+    id: ime
+    attributes:
+      label: Keyboard and IME
+      placeholder: US keyboard, Google Japanese Input version …
+    validations:
+      required: true
+  - type: input
+    id: app
+    attributes:
+      label: Application where it occurred
+      placeholder: TextEdit, Chrome, Terminal, …
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Do not paste private text or secrets.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: permissions
+    attributes:
+      label: Permission status
+      options:
+        - label: Input Monitoring shows Allowed.
+        - label: Accessibility shows Allowed.

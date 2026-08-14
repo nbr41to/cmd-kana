@@ -1,0 +1,160 @@
+<p align="center">
+  <img src="app/assets/cmd-kana-logo.png" width="160" alt="cmd-kana logo">
+</p>
+
+<h1 align="center">cmd-kana</h1>
+
+<p align="center">
+  USキーボードの左右Commandキーで、英数とかなを迷わず切り替えるmacOSアプリ
+</p>
+
+<p align="center">
+  <a href="https://github.com/nbr41to/cmd-kana/actions/workflows/ci.yml"><img src="https://github.com/nbr41to/cmd-kana/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <img src="https://img.shields.io/badge/macOS-11.0%2B-black?logo=apple" alt="macOS 11.0+">
+  <img src="https://img.shields.io/badge/Apple%20Silicon-arm64-blue" alt="Apple Silicon">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License"></a>
+</p>
+
+## cmd-kanaとは
+
+cmd-kanaは、JISキーボードの「英数」「かな」に近い操作をUSキーボードで実現する、小さなメニューバー常駐アプリです。
+
+左右のCommandキーを単独で押したときだけ入力モードを切り替えるため、`⌘C`、`⌘V`など通常のショートカットはそのまま使用できます。Google日本語入力を含め、直前に使用していた英数・日本語入力モードへ戻ります。
+
+### 主な機能
+
+| 操作 | 動作 |
+| --- | --- |
+| 左Commandを単独で押して離す | 最後に使った英数入力へ切り替え |
+| 右Commandを単独で押して離す | 最後に使った日本語入力へ切り替え |
+| 左Commandを550ms以内に2回 | 直前に入力した1語を英数表記へ変換 |
+| Commandと別のキーを同時に押す | 通常のCommandショートカットとして動作 |
+
+例えば、日本語入力中に`こんにちは`と入力して左Commandを素早く2回押すと、カーソル位置を大きく動かさずに`konnnitiha`へ置き換えます。右Commandの2回押し変換はありません。
+
+そのほか、次の機能を備えています。
+
+- メニューバーへの表示・非表示
+- 入力監視とアクセシビリティの状態確認
+- 権限付与後の入力監視自動復旧
+- ログイン時の自動起動（macOS 13以降）
+- 重複起動の防止
+- 権限トラブル時の再設定ガイド
+
+## 動作環境
+
+- Apple Silicon Mac（arm64）
+- macOS 11.0以降
+- USキーボード
+- macOSの入力ソースに英語と日本語が追加されていること
+
+「ログイン時に起動する」の設定にはmacOS 13.0以降が必要です。Intel MacとJISキーボードは現在のサポート対象外です。
+
+## インストール
+
+正式公開用のDeveloper ID署名・Apple公証済みバイナリは準備中です。現時点ではソースからビルドしてください。未公証のCI成果物は一般配布用ではありません。
+
+### 1. 必要なツール
+
+- Xcode Command Line Tools
+- [Rust公式のrustup](https://rust-lang.org/tools/install/)
+
+```sh
+xcode-select --install
+```
+
+### 2. ビルド
+
+```sh
+git clone https://github.com/nbr41to/cmd-kana.git
+cd cmd-kana
+./scripts/package.sh
+```
+
+アプリは`target/release/cmd-kana.app`へ作成されます。通常利用では`/Applications`へコピーして起動してください。
+
+```sh
+ditto target/release/cmd-kana.app /Applications/cmd-kana.app
+open /Applications/cmd-kana.app
+```
+
+## 初回設定
+
+cmd-kanaを起動すると設定画面が開きます。「システム設定 → プライバシーとセキュリティ」で、次の2つを許可してください。
+
+| 権限 | 使用目的 |
+| --- | --- |
+| 入力監視 | Commandキーと、2回押し変換に必要な直前の物理キー列を検出するため |
+| アクセシビリティ | 仮想の英数・かなキー送信と、カーソル直前の文字列置換を行うため |
+
+許可はいつでもシステム設定から解除できます。許可後はアプリを再起動しなくても、最大数秒で入力監視を自動的に開始します。
+
+### プライバシー
+
+cmd-kanaはネットワーク通信を行いません。入力内容のアップロードやディスクへの保存も行いません。2回押し変換のために記録する物理キー列はメモリ上だけに保持し、空白、改行、クリック、ショートカットなどの境界で破棄します。詳細は[セキュリティポリシー](SECURITY.md)を参照してください。
+
+## 設定とメニューバー
+
+通常起動では設定画面が開きます。ログイン項目として起動した場合は、ウィンドウを表示せず静かに常駐します。
+
+設定画面では次の操作ができます。
+
+- メニューバーに表示する
+- ログイン時に起動する
+- 権限状態を確認する
+- 入力監視・アクセシビリティのシステム設定を開く
+- 権限の再設定手順を確認する
+- アプリを再起動・終了する
+
+メニューバーには、バージョン、設定を開く、更新、閉じるを表示します。現在の「更新」は新しいバージョンのダウンロードではなく、インストール済みアプリの再起動です。
+
+## 仕組み
+
+単押し切り替えでは入力ソースを直接書き換えず、macOS標準の仮想「英数」「かな」キーを送信します。そのため、macOS標準IMEやGoogle日本語入力が持つ直前のモードを利用できます。
+
+左Commandの2回押しでは、直前に連続入力された物理キー列を最大128キーまでメモリに記録します。対応する入力欄ではアクセシビリティAPIでカーソル直前をローマ字へ直接置換し、対応しない入力欄のみDeleteと再入力へフォールバックします。
+
+入力イベントの判定とローマ字変換はテスト可能なRustコードへ分離し、macOSのUIとアクセシビリティ連携だけを小さなObjective-Cブリッジにまとめています。外部Rustクレートには依存していません。
+
+## トラブルシューティング
+
+### Commandキーを押しても切り替わらない
+
+1. 設定画面で入力監視とアクセシビリティが「許可済み」になっているか確認します。
+2. 「動かない場合」を押して再設定手順を開きます。
+3. 許可済みでも動かない場合は、システム設定の一覧からcmd-kanaを一度削除します。
+4. `/Applications/cmd-kana.app`を追加し直し、両方をオンにします。
+
+権限が反映されると入力監視は自動的に再開します。
+
+### Google日本語入力ではなくmacOS標準の英数になる
+
+左CommandはmacOSの仮想「英数」キーを送信します。先にGoogle日本語入力の英数モードを一度選択してから切り替えると、以後はそのモードへ戻ります。
+
+### 2回押し変換が意図しない範囲へ作用する
+
+2回押しの対象は、空白、改行、クリック、Command・Control・Optionショートカットの後にリセットされます。再現する場合は、macOSのバージョン、IME、利用アプリ、入力例を添えてIssueで報告してください。個人的な入力内容は含めないでください。
+
+## 開発
+
+リリース前の一括検証は次のコマンドで実行できます。
+
+```sh
+./scripts/check.sh
+```
+
+このスクリプトはフォーマット、15件の単体テスト、Clippy、リリースビルド、アプリのパッケージング、署名とplistを検証します。
+
+- [テスト方針と手動確認項目](docs/TESTING.md)
+- [署名・公証・リリース手順](docs/RELEASING.md)
+- [変更履歴](CHANGELOG.md)
+- [コントリビューションガイド](CONTRIBUTING.md)
+- [セキュリティポリシー](SECURITY.md)
+
+## 謝辞
+
+左右Commandキーによる英数・かな切り替えの設計では、[iMasanari/cmd-eikana](https://github.com/iMasanari/cmd-eikana)を参考にしました。
+
+## ライセンス
+
+[MIT License](LICENSE)

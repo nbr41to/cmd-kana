@@ -1,0 +1,12 @@
+[package]
+name = "cmd-kana"
+version = "0.9.1"
+edition = "2021"
+rust-version = "1.70"
+description = "Switch the macOS input source with the left and right Command keys"
+license = "MIT"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
