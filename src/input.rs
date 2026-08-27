@@ -74,6 +74,16 @@ pub fn hiragana_length(keys: &[RecordedKey]) -> Option<usize> {
             length += 1; // terminal nn commits a single ん
             break;
         }
+        if bytes.len() >= 4
+            && &bytes[..3] == b"nnn"
+            && matches!(bytes[3], b'a' | b'e' | b'i' | b'o' | b'u' | b'y')
+        {
+            // In input such as konnnitiha, the first two n characters commit
+            // ん and the third begins the following に.
+            length += 1;
+            rest = &rest[2..];
+            continue;
+        }
         if bytes.len() >= 2
             && bytes[0] == bytes[1]
             && !matches!(bytes[0], b'a' | b'e' | b'i' | b'n' | b'o' | b'u')
@@ -249,6 +259,7 @@ pub struct InputState {
     held: Option<i64>,
     used_with_other_key: bool,
     last_left_tap_ms: Option<u64>,
+    last_right_tap_ms: Option<u64>,
     typed: Vec<RecordedKey>,
 }
 
@@ -261,18 +272,33 @@ impl InputState {
             self.held = None;
             if self.used_with_other_key {
                 self.last_left_tap_ms = None;
+                self.last_right_tap_ms = None;
                 return None;
             }
             if keycode == RIGHT_COMMAND {
                 self.last_left_tap_ms = None;
+                self.typed.clear();
+                let repeated = self.last_right_tap_ms.is_some_and(|last| {
+                    now_ms.saturating_sub(last) <= DOUBLE_TAP.as_millis() as u64
+                });
+                self.last_right_tap_ms = Some(now_ms);
+                if repeated {
+                    return None;
+                }
                 return Some(Action::Switch(Side::Japanese));
             }
+            self.last_right_tap_ms = None;
             let double = self
                 .last_left_tap_ms
                 .is_some_and(|last| now_ms.saturating_sub(last) <= DOUBLE_TAP.as_millis() as u64);
             if double && !self.typed.is_empty() {
                 self.last_left_tap_ms = None;
                 return Some(Action::ReplaceWithEnglish(std::mem::take(&mut self.typed)));
+            }
+            if self.last_left_tap_ms.is_some() {
+                // An earlier English switch has expired. Its composition must
+                // never become part of a later double-tap replacement.
+                self.typed.clear();
             }
             self.last_left_tap_ms = Some(now_ms);
             return Some(Action::Switch(Side::English));
@@ -289,27 +315,37 @@ impl InputState {
     pub fn key_down(&mut self, keycode: i64, shift: bool, shortcut: bool) {
         if self.held.is_some() {
             self.used_with_other_key = true;
-            self.typed.clear();
-            self.last_left_tap_ms = None;
+            self.clear();
             return;
         }
         if shortcut {
             self.clear();
             return;
         }
+        if self.last_left_tap_ms.take().is_some() {
+            // The first left Command switched to English. Any subsequent text
+            // starts a new candidate instead of extending the old Japanese one.
+            self.typed.clear();
+        }
+        self.last_right_tap_ms = None;
         match keycode {
             51 => {
                 self.typed.pop();
             }
             36 | 48 | 49 | 53 | 76 | 123..=126 => self.clear(),
             0..=127 => {
+                let key = RecordedKey {
+                    keycode: keycode as u16,
+                    shift,
+                };
+                if key.us_letter().is_none() {
+                    self.clear();
+                    return;
+                }
                 if self.typed.len() == 128 {
                     self.typed.remove(0);
                 }
-                self.typed.push(RecordedKey {
-                    keycode: keycode as u16,
-                    shift,
-                });
+                self.typed.push(key);
             }
             _ => self.clear(),
         }
@@ -318,6 +354,7 @@ impl InputState {
     pub fn clear(&mut self) {
         self.typed.clear();
         self.last_left_tap_ms = None;
+        self.last_right_tap_ms = None;
     }
 }
 
@@ -383,7 +420,7 @@ mod tests {
             Some(Action::Switch(Side::Japanese))
         );
         assert_eq!(
-            tap(&mut state, RIGHT_COMMAND, 200),
+            tap(&mut state, RIGHT_COMMAND, 800),
             Some(Action::Switch(Side::Japanese))
         );
     }
@@ -459,16 +496,81 @@ mod tests {
     }
 
     #[test]
-    fn right_double_tap_is_only_two_japanese_switches() {
+    fn rapid_right_taps_send_only_one_japanese_switch() {
         let mut state = InputState::default();
         assert_eq!(
             tap(&mut state, RIGHT_COMMAND, 0),
             Some(Action::Switch(Side::Japanese))
         );
+        assert_eq!(tap(&mut state, RIGHT_COMMAND, 100), None);
         assert_eq!(
-            tap(&mut state, RIGHT_COMMAND, 100),
+            tap(
+                &mut state,
+                RIGHT_COMMAND,
+                100 + DOUBLE_TAP.as_millis() as u64 + 2
+            ),
             Some(Action::Switch(Side::Japanese))
         );
+    }
+
+    #[test]
+    fn right_switch_discards_the_previous_conversion_history() {
+        let mut state = InputState::default();
+        for key in keys("aka") {
+            state.key_down(key.keycode.into(), key.shift, false);
+        }
+        assert_eq!(
+            tap(&mut state, RIGHT_COMMAND, 0),
+            Some(Action::Switch(Side::Japanese))
+        );
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 1_000),
+            Some(Action::Switch(Side::English))
+        );
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 1_100),
+            Some(Action::Switch(Side::English))
+        );
+    }
+
+    #[test]
+    fn typing_after_an_english_switch_starts_a_fresh_replacement() {
+        let mut state = InputState::default();
+        for key in keys("aka") {
+            state.key_down(key.keycode.into(), key.shift, false);
+        }
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 0),
+            Some(Action::Switch(Side::English))
+        );
+        state.key_down(keycode('b').into(), false, false);
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 1_000),
+            Some(Action::Switch(Side::English))
+        );
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 1_100),
+            Some(Action::ReplaceWithEnglish(keys("b")))
+        );
+    }
+
+    #[test]
+    fn confirmed_conversion_and_punctuation_discard_history() {
+        for boundary in [36, 76, 43, 47] {
+            let mut state = InputState::default();
+            for key in keys("aka") {
+                state.key_down(key.keycode.into(), key.shift, false);
+            }
+            state.key_down(boundary, false, false);
+            assert_eq!(
+                tap(&mut state, LEFT_COMMAND, 0),
+                Some(Action::Switch(Side::English))
+            );
+            assert_eq!(
+                tap(&mut state, LEFT_COMMAND, 100),
+                Some(Action::Switch(Side::English))
+            );
+        }
     }
 
     #[test]
@@ -613,6 +715,7 @@ mod tests {
     fn romaji_length_handles_n_gemination_and_compound_kana() {
         assert_eq!(hiragana_length(&keys("kan")), Some(2)); // かん
         assert_eq!(hiragana_length(&keys("nn")), Some(1)); // ん
+        assert_eq!(hiragana_length(&keys("konnnitiha")), Some(5)); // こんにちは
         assert_eq!(hiragana_length(&keys("kanna")), Some(3)); // かんな
         assert_eq!(hiragana_length(&keys("kitte")), Some(3)); // きって
         assert_eq!(hiragana_length(&keys("gakkou")), Some(4)); // がっこう

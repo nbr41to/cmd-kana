@@ -4,6 +4,12 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-08-27
+
+- Prevented rapid right Command taps from sending duplicate Kana events that could reopen IME conversion.
+- Clear recorded conversion history after a right Command switch, conversion confirmation, punctuation, or new typing after an English switch.
+- Prevented stale input history from expanding a later left double-tap replacement to older text left of the cursor.
+
 ## [0.9.1] - 2026-08-13
 
 - Removed Input Monitoring and Accessibility status rows from the menu-bar menu; permission details remain available in Settings.
