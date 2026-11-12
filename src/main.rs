@@ -11,9 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 mod input;
-use input::{
-    hiragana_length, roman_text, Action, InputState, RecordedKey, Side, LEFT_COMMAND, RIGHT_COMMAND,
-};
+use input::{hiragana_length, roman_text, Action, InputState, RecordedKey, Side};
 
 type CFTypeRef = *const c_void;
 type CFStringRef = *const c_void;
@@ -77,6 +75,7 @@ extern "C" {
 extern "C" {
     fn run_menu_bar_app();
     fn replace_previous_text(length: CFIndex, replacement_utf8: *const c_char) -> bool;
+    fn uses_native_english_conversion() -> bool;
     fn getuid() -> u32;
     fn kill(pid: c_int, signal: c_int) -> c_int;
     fn flock(fd: c_int, operation: c_int) -> c_int;
@@ -196,8 +195,8 @@ unsafe fn replace_with_english(keys: Vec<RecordedKey>) {
         switch_to(Side::English);
         return;
     }
-    // The first Command tap has already switched and committed the IME. Send
-    // one tight fallback batch for controls that do not expose AXSelectedText.
+    // Legacy fallback for non-Google controls without AXSelectedText support.
+    // Google/Mozc marked text must use NativeEnglishDoubleTap instead.
     for _ in 0..rendered_length {
         post_key(51, 0); // Delete
     }
@@ -215,7 +214,10 @@ extern "C" fn event_callback(
     unsafe {
         if event_type == TAP_DISABLED_TIMEOUT || event_type == TAP_DISABLED_USER_INPUT {
             if let Some(state) = STATE.get() {
-                if let Some(tap) = state.lock().unwrap().tap {
+                let mut state = state.lock().unwrap();
+                // Releases and composition boundaries may have been missed.
+                state.input = InputState::default();
+                if let Some(tap) = state.tap {
                     CGEventTapEnable(tap, true);
                 }
             }
@@ -230,9 +232,20 @@ extern "C" fn event_callback(
         if let Some(mutex) = STATE.get() {
             let mut state = mutex.lock().unwrap();
             match event_type {
-                FLAGS_CHANGED if keycode == LEFT_COMMAND || keycode == RIGHT_COMMAND => {
+                FLAGS_CHANGED => {
+                    let flags = CGEventGetFlags(event);
+                    if keycode == input::LEFT_COMMAND || keycode == input::RIGHT_COMMAND {
+                        state
+                            .input
+                            .set_native_english_conversion(uses_native_english_conversion());
+                    }
                     let now_ms = STARTED_AT.get().unwrap().elapsed().as_millis() as u64;
-                    action = state.input.command_changed(keycode, now_ms);
+                    action = state.input.flags_changed(
+                        keycode,
+                        now_ms,
+                        flags & COMMAND_FLAG != 0,
+                        flags & (SHIFT_FLAG | CONTROL_FLAG | OPTION_FLAG) != 0,
+                    );
                 }
                 KEY_DOWN => {
                     let flags = CGEventGetFlags(event);
@@ -250,6 +263,13 @@ extern "C" fn event_callback(
         match action {
             Some(Action::Switch(side)) => switch_to(side),
             Some(Action::ReplaceWithEnglish(keys)) => replace_with_english(keys),
+            Some(Action::NativeEnglishDoubleTap) => {
+                // Google's native double-tap window is 500 ms, while ours is
+                // 550 ms. A fresh tight pair also handles the 500–550 ms edge.
+                // Do not edit or delete IME-owned marked text through AX.
+                switch_to(Side::English);
+                switch_to(Side::English);
+            }
             None => {}
         }
         event

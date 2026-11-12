@@ -2,9 +2,23 @@
 #import <ApplicationServices/ApplicationServices.h>
 #import <CoreServices/CoreServices.h>
 #import <ServiceManagement/ServiceManagement.h>
+#import <Carbon/Carbon.h>
 
 extern bool start_event_monitoring(void);
 extern bool is_event_monitoring(void);
+
+bool uses_native_english_conversion(void) {
+    TISInputSourceRef source = TISCopyCurrentKeyboardInputSource();
+    if (!source) return false;
+    CFTypeRef identifier = TISGetInputSourceProperty(source, kTISPropertyInputSourceID);
+    bool native = identifier && CFGetTypeID(identifier) == CFStringGetTypeID() &&
+        (CFEqual(identifier, CFSTR("com.google.inputmethod.Japanese")) ||
+         CFEqual(identifier, CFSTR("org.mozc.inputmethod.Japanese")) ||
+         CFStringHasPrefix((CFStringRef)identifier, CFSTR("com.google.inputmethod.Japanese.")) ||
+         CFStringHasPrefix((CFStringRef)identifier, CFSTR("org.mozc.inputmethod.Japanese.")));
+    CFRelease(source);
+    return native;
+}
 
 @interface CmdKanaDelegate : NSObject <NSApplicationDelegate>
 @property(strong) NSStatusItem *statusItem;

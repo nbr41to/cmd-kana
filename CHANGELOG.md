@@ -4,6 +4,18 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+## [0.9.3] - 2026-11-12
+
+- Corrected replacement lengths for small kana, extended romaji syllables, alphabetic symbol shortcuts, and consecutive `nn` pairs.
+- Cancel replacement after Delete or history overflow rather than guessing the remaining IME composition or truncating a syllable.
+- Track both held Command keys and suppress Command-click and modifier-only chords without leaving the next tap stuck.
+- Avoid recording known English-mode input as a Japanese replacement candidate, and discard state when event monitoring is interrupted.
+- Added Linux input checks and repeated conversion/timing regression coverage.
+- Delegate Google Japanese Input/Mozc double taps to native Eisu conversion instead of deleting IME-owned marked text; preserve the original provider across the first Eisu switch and handle the 500–550 ms timing gap.
+- Skip guessed deletion lengths for Shift-dependent input on the non-Google path. Google-specific `nn` and invalid-prefix behavior is handled by the IME itself.
+- Added 2,196 recorded live Mozc composition fixtures and a reproducible engine check covering raw commits and 63 Shift/input-mode combinations.
+- macOS Google Japanese Input source detection and native event delivery still require the manual integration checks in `docs/GOOGLE_IME_TESTING.md`; Linux engine checks do not establish those results.
+
 ## [0.9.2] - 2026-08-27
 
 - Prevented rapid right Command taps from sending duplicate Kana events that could reopen IME conversion.

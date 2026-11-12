@@ -12,5 +12,6 @@ fn main() {
     println!("cargo:rustc-link-arg={}", object.display());
     println!("cargo:rustc-link-lib=framework=Cocoa");
     println!("cargo:rustc-link-lib=framework=ServiceManagement");
+    println!("cargo:rustc-link-lib=framework=Carbon");
     println!("cargo:rerun-if-changed=app/menu.m");
 }

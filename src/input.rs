@@ -65,21 +65,21 @@ pub fn roman_text(keys: &[RecordedKey]) -> Option<String> {
 }
 
 pub fn hiragana_length(keys: &[RecordedKey]) -> Option<usize> {
-    let romaji = roman_text(keys)?.to_ascii_lowercase();
+    if keys.iter().any(|key| key.shift) {
+        // Shift can select ASCII or Katakana according to the IME settings.
+        // A lowercase romaji estimate cannot safely describe that text.
+        return None;
+    }
+    // This is the legacy non-Google estimate. Google/Mozc must use its own
+    // native raw-text conversion, whose composition rules differ by mode.
+    let romaji = roman_text(keys)?;
     let mut rest = romaji.as_str();
     let mut length = 0;
     while !rest.is_empty() {
         let bytes = rest.as_bytes();
-        if rest == "nn" {
-            length += 1; // terminal nn commits a single ん
-            break;
-        }
-        if bytes.len() >= 4
-            && &bytes[..3] == b"nnn"
-            && matches!(bytes[3], b'a' | b'e' | b'i' | b'o' | b'u' | b'y')
+        if bytes.starts_with(b"nn")
+            && (bytes.len() == 2 || !matches!(bytes[2], b'a' | b'e' | b'i' | b'o' | b'u' | b'y'))
         {
-            // In input such as konnnitiha, the first two n characters commit
-            // ん and the third begins the following に.
             length += 1;
             rest = &rest[2..];
             continue;
@@ -88,7 +88,7 @@ pub fn hiragana_length(keys: &[RecordedKey]) -> Option<usize> {
             && bytes[0] == bytes[1]
             && !matches!(bytes[0], b'a' | b'e' | b'i' | b'n' | b'o' | b'u')
         {
-            length += 1; // small っ
+            length += 1;
             rest = &rest[1..];
             continue;
         }
@@ -96,16 +96,18 @@ pub fn hiragana_length(keys: &[RecordedKey]) -> Option<usize> {
             && (bytes.len() == 1
                 || (bytes[1] != b'y' && !matches!(bytes[1], b'a' | b'e' | b'i' | b'o' | b'u')))
         {
-            length += 1; // ん
+            length += 1;
             rest = &rest[1..];
             continue;
         }
-        if let Some((roman, kana)) = ROMAJI.iter().find(|(roman, _)| rest.starts_with(roman)) {
+        if let Some((roman, kana)) = ROMAJI
+            .iter()
+            .filter(|(roman, _)| rest.starts_with(roman))
+            .max_by_key(|(roman, _)| roman.len())
+        {
             length += kana.chars().count();
             rest = &rest[roman.len()..];
         } else {
-            // An uncommitted consonant is rendered as one full-width Latin
-            // character by Japanese IMEs (for example kfa -> ｋふぁ).
             length += 1;
             rest = &rest[1..];
         }
@@ -114,6 +116,153 @@ pub fn hiragana_length(keys: &[RecordedKey]) -> Option<usize> {
 }
 
 const ROMAJI: &[(&str, &str)] = &[
+    ("zh", "←"),
+    ("zj", "↓"),
+    ("zk", "↑"),
+    ("zl", "→"),
+    ("xtsu", "っ"),
+    ("ltsu", "っ"),
+    ("xtu", "っ"),
+    ("ltu", "っ"),
+    ("xa", "ぁ"),
+    ("xi", "ぃ"),
+    ("xu", "ぅ"),
+    ("xe", "ぇ"),
+    ("xo", "ぉ"),
+    ("la", "ぁ"),
+    ("li", "ぃ"),
+    ("lu", "ぅ"),
+    ("le", "ぇ"),
+    ("lo", "ぉ"),
+    ("xya", "ゃ"),
+    ("xyu", "ゅ"),
+    ("xyo", "ょ"),
+    ("lya", "ゃ"),
+    ("lyu", "ゅ"),
+    ("lyo", "ょ"),
+    ("xyi", "ぃ"),
+    ("xye", "ぇ"),
+    ("lyi", "ぃ"),
+    ("lye", "ぇ"),
+    ("xwa", "ゎ"),
+    ("lwa", "ゎ"),
+    ("xka", "ヵ"),
+    ("xke", "ヶ"),
+    ("lka", "ヵ"),
+    ("lke", "ヶ"),
+    ("xn", "ん"),
+    ("thi", "てぃ"),
+    ("tha", "てゃ"),
+    ("thu", "てゅ"),
+    ("the", "てぇ"),
+    ("tho", "てょ"),
+    ("dhi", "でぃ"),
+    ("dha", "でゃ"),
+    ("dhu", "でゅ"),
+    ("dhe", "でぇ"),
+    ("dho", "でょ"),
+    ("dya", "ぢゃ"),
+    ("dyi", "ぢぃ"),
+    ("dyu", "ぢゅ"),
+    ("dye", "ぢぇ"),
+    ("dyo", "ぢょ"),
+    ("tsa", "つぁ"),
+    ("tsi", "つぃ"),
+    ("tse", "つぇ"),
+    ("tso", "つぉ"),
+    ("twa", "とぁ"),
+    ("twi", "とぃ"),
+    ("twu", "とぅ"),
+    ("twe", "とぇ"),
+    ("two", "とぉ"),
+    ("dwa", "どぁ"),
+    ("dwi", "どぃ"),
+    ("dwu", "どぅ"),
+    ("dwe", "どぇ"),
+    ("dwo", "どぉ"),
+    ("wi", "うぃ"),
+    ("we", "うぇ"),
+    ("wyi", "ゐ"),
+    ("wye", "ゑ"),
+    ("wha", "うぁ"),
+    ("whi", "うぃ"),
+    ("whu", "う"),
+    ("whe", "うぇ"),
+    ("who", "うぉ"),
+    ("wu", "う"),
+    ("ye", "いぇ"),
+    ("ca", "か"),
+    ("ci", "し"),
+    ("cu", "く"),
+    ("ce", "せ"),
+    ("co", "こ"),
+    ("qa", "くぁ"),
+    ("qi", "くぃ"),
+    ("qu", "く"),
+    ("qe", "くぇ"),
+    ("qo", "くぉ"),
+    ("kwa", "くぁ"),
+    ("kwi", "くぃ"),
+    ("kwu", "くぅ"),
+    ("kwe", "くぇ"),
+    ("kwo", "くぉ"),
+    ("gwa", "ぐぁ"),
+    ("gwi", "ぐぃ"),
+    ("gwu", "ぐぅ"),
+    ("gwe", "ぐぇ"),
+    ("gwo", "ぐぉ"),
+    ("swa", "すぁ"),
+    ("swi", "すぃ"),
+    ("swu", "すぅ"),
+    ("swe", "すぇ"),
+    ("swo", "すぉ"),
+    ("zwa", "ずぁ"),
+    ("zwi", "ずぃ"),
+    ("zwu", "ずぅ"),
+    ("zwe", "ずぇ"),
+    ("zwo", "ずぉ"),
+    ("fya", "ふゃ"),
+    ("fyu", "ふゅ"),
+    ("fyo", "ふょ"),
+    ("hwa", "ふぁ"),
+    ("hwi", "ふぃ"),
+    ("hwe", "ふぇ"),
+    ("hwo", "ふぉ"),
+    ("hwyu", "ふゅ"),
+    ("vya", "ゔゃ"),
+    ("vyi", "ゔぃ"),
+    ("vyu", "ゔゅ"),
+    ("vye", "ゔぇ"),
+    ("vyo", "ゔょ"),
+    ("kyi", "きぃ"),
+    ("kye", "きぇ"),
+    ("gyi", "ぎぃ"),
+    ("gye", "ぎぇ"),
+    ("syi", "しぃ"),
+    ("sye", "しぇ"),
+    ("zya", "じゃ"),
+    ("zyi", "じぃ"),
+    ("zyu", "じゅ"),
+    ("zye", "じぇ"),
+    ("zyo", "じょ"),
+    ("tyi", "ちぃ"),
+    ("tye", "ちぇ"),
+    ("cyi", "ちぃ"),
+    ("cye", "ちぇ"),
+    ("nyi", "にぃ"),
+    ("nye", "にぇ"),
+    ("hyi", "ひぃ"),
+    ("hye", "ひぇ"),
+    ("byi", "びぃ"),
+    ("bye", "びぇ"),
+    ("pyi", "ぴぃ"),
+    ("pye", "ぴぇ"),
+    ("myi", "みぃ"),
+    ("mye", "みぇ"),
+    ("ryi", "りぃ"),
+    ("rye", "りぇ"),
+    ("jyi", "じぃ"),
+    ("jye", "じぇ"),
     ("kya", "きゃ"),
     ("kyu", "きゅ"),
     ("kyo", "きょ"),
@@ -252,24 +401,61 @@ const ROMAJI: &[(&str, &str)] = &[
 pub enum Action {
     Switch(Side),
     ReplaceWithEnglish(Vec<RecordedKey>),
+    NativeEnglishDoubleTap,
 }
 
 #[derive(Default)]
 pub struct InputState {
-    held: Option<i64>,
+    held: u8,
     used_with_other_key: bool,
     last_left_tap_ms: Option<u64>,
     last_right_tap_ms: Option<u64>,
     typed: Vec<RecordedKey>,
+    recording_blocked: bool,
+    english_selected: bool,
+    native_english_conversion: bool,
+    last_left_tap_native: bool,
 }
 
 impl InputState {
-    pub fn command_changed(&mut self, keycode: i64, now_ms: u64) -> Option<Action> {
+    pub fn set_native_english_conversion(&mut self, enabled: bool) {
+        self.native_english_conversion = enabled;
+    }
+
+    pub fn flags_changed(
+        &mut self,
+        keycode: i64,
+        now_ms: u64,
+        command: bool,
+        other_modifiers: bool,
+    ) -> Option<Action> {
         if keycode != LEFT_COMMAND && keycode != RIGHT_COMMAND {
+            if command || self.held != 0 {
+                self.clear();
+            }
             return None;
         }
-        if self.held == Some(keycode) {
-            self.held = None;
+        if other_modifiers {
+            self.clear();
+        }
+        let action = self.command_changed(keycode, now_ms);
+        if other_modifiers {
+            // On key-down, suppress the newly held Command as well.
+            self.clear();
+            None
+        } else {
+            action
+        }
+    }
+
+    pub fn command_changed(&mut self, keycode: i64, now_ms: u64) -> Option<Action> {
+        let mask = match keycode {
+            LEFT_COMMAND => 1,
+            RIGHT_COMMAND => 2,
+            _ => return None,
+        };
+        if self.held & mask != 0 {
+            self.held &= !mask;
             if self.used_with_other_key {
                 self.last_left_tap_ms = None;
                 self.last_right_tap_ms = None;
@@ -278,6 +464,8 @@ impl InputState {
             if keycode == RIGHT_COMMAND {
                 self.last_left_tap_ms = None;
                 self.typed.clear();
+                self.recording_blocked = false;
+                self.english_selected = false;
                 let repeated = self.last_right_tap_ms.is_some_and(|last| {
                     now_ms.saturating_sub(last) <= DOUBLE_TAP.as_millis() as u64
                 });
@@ -288,9 +476,18 @@ impl InputState {
                 return Some(Action::Switch(Side::Japanese));
             }
             self.last_right_tap_ms = None;
+            self.english_selected = true;
             let double = self
                 .last_left_tap_ms
                 .is_some_and(|last| now_ms.saturating_sub(last) <= DOUBLE_TAP.as_millis() as u64);
+            if double && self.last_left_tap_native {
+                // Google Japanese Input owns the marked text and its raw key
+                // history. Let its native Eisu double tap commit that history.
+                self.last_left_tap_ms = None;
+                self.last_left_tap_native = false;
+                self.typed.clear();
+                return Some(Action::NativeEnglishDoubleTap);
+            }
             if double && !self.typed.is_empty() {
                 self.last_left_tap_ms = None;
                 return Some(Action::ReplaceWithEnglish(std::mem::take(&mut self.typed)));
@@ -301,20 +498,20 @@ impl InputState {
                 self.typed.clear();
             }
             self.last_left_tap_ms = Some(now_ms);
+            self.last_left_tap_native = self.native_english_conversion;
             return Some(Action::Switch(Side::English));
         }
-        if self.held.is_none() {
-            self.held = Some(keycode);
+        if self.held == 0 {
             self.used_with_other_key = false;
         } else {
-            self.used_with_other_key = true;
+            self.clear();
         }
+        self.held |= mask;
         None
     }
 
     pub fn key_down(&mut self, keycode: i64, shift: bool, shortcut: bool) {
-        if self.held.is_some() {
-            self.used_with_other_key = true;
+        if self.held != 0 {
             self.clear();
             return;
         }
@@ -323,14 +520,20 @@ impl InputState {
             return;
         }
         if self.last_left_tap_ms.take().is_some() {
-            // The first left Command switched to English. Any subsequent text
-            // starts a new candidate instead of extending the old Japanese one.
+            // Typing after the first left tap cancels its Japanese candidate.
             self.typed.clear();
         }
         self.last_right_tap_ms = None;
         match keycode {
+            102 | 104 => {
+                self.clear();
+                self.english_selected = keycode == 102;
+            }
             51 => {
-                self.typed.pop();
+                // IMEs delete rendered characters, not physical keys. Without
+                // observing the composition, its remaining extent is unknown.
+                self.typed.clear();
+                self.recording_blocked = true;
             }
             36 | 48 | 49 | 53 | 76 | 123..=126 => self.clear(),
             0..=127 => {
@@ -342,8 +545,14 @@ impl InputState {
                     self.clear();
                     return;
                 }
+                if self.recording_blocked || self.english_selected {
+                    return;
+                }
                 if self.typed.len() == 128 {
-                    self.typed.remove(0);
+                    // A sliding window can cut through a multi-key syllable.
+                    self.typed.clear();
+                    self.recording_blocked = true;
+                    return;
                 }
                 self.typed.push(key);
             }
@@ -352,8 +561,13 @@ impl InputState {
     }
 
     pub fn clear(&mut self) {
+        if self.held != 0 {
+            self.used_with_other_key = true;
+        }
         self.typed.clear();
+        self.recording_blocked = false;
         self.last_left_tap_ms = None;
+        self.last_left_tap_native = false;
         self.last_right_tap_ms = None;
     }
 }
@@ -404,8 +618,8 @@ mod tests {
     }
 
     fn tap(state: &mut InputState, key: i64, at: u64) -> Option<Action> {
-        assert_eq!(state.command_changed(key, at), None);
-        state.command_changed(key, at + 1)
+        assert_eq!(state.flags_changed(key, at, true, false), None);
+        state.flags_changed(key, at + 1, false, false)
     }
 
     #[test]
@@ -534,7 +748,7 @@ mod tests {
     }
 
     #[test]
-    fn typing_after_an_english_switch_starts_a_fresh_replacement() {
+    fn typing_after_an_english_switch_does_not_reinterpret_latin_as_kana() {
         let mut state = InputState::default();
         for key in keys("aka") {
             state.key_down(key.keycode.into(), key.shift, false);
@@ -543,14 +757,16 @@ mod tests {
             tap(&mut state, LEFT_COMMAND, 0),
             Some(Action::Switch(Side::English))
         );
-        state.key_down(keycode('b').into(), false, false);
+        for key in keys("kya") {
+            state.key_down(key.keycode.into(), key.shift, false);
+        }
         assert_eq!(
             tap(&mut state, LEFT_COMMAND, 1_000),
             Some(Action::Switch(Side::English))
         );
         assert_eq!(
             tap(&mut state, LEFT_COMMAND, 1_100),
-            Some(Action::ReplaceWithEnglish(keys("b")))
+            Some(Action::Switch(Side::English))
         );
     }
 
@@ -589,7 +805,7 @@ mod tests {
     }
 
     #[test]
-    fn delete_updates_the_recorded_physical_input() {
+    fn delete_cancels_replacement_even_with_pending_latin_input() {
         let mut state = InputState::default();
         state.key_down(0, false, false);
         state.key_down(11, true, false);
@@ -600,10 +816,7 @@ mod tests {
         );
         assert_eq!(
             tap(&mut state, LEFT_COMMAND, 100),
-            Some(Action::ReplaceWithEnglish(vec![RecordedKey {
-                keycode: 0,
-                shift: false
-            }]))
+            Some(Action::Switch(Side::English))
         );
     }
 
@@ -658,6 +871,7 @@ mod tests {
             Some(Action::ReplaceWithEnglish(_))
         ));
 
+        tap(&mut state, RIGHT_COMMAND, 800);
         state.key_down(0, false, false);
         assert_eq!(
             tap(&mut state, LEFT_COMMAND, 1_000),
@@ -687,9 +901,9 @@ mod tests {
     }
 
     #[test]
-    fn history_is_bounded_to_the_latest_128_keys() {
+    fn exactly_128_keys_can_still_be_replaced() {
         let mut state = InputState::default();
-        for _ in 0..130 {
+        for _ in 0..128 {
             state.key_down(0, false, false);
         }
         assert_eq!(
@@ -716,7 +930,7 @@ mod tests {
         assert_eq!(hiragana_length(&keys("kan")), Some(2)); // かん
         assert_eq!(hiragana_length(&keys("nn")), Some(1)); // ん
         assert_eq!(hiragana_length(&keys("konnnitiha")), Some(5)); // こんにちは
-        assert_eq!(hiragana_length(&keys("kanna")), Some(3)); // かんな
+        assert_eq!(hiragana_length(&keys("kanna")), Some(3));
         assert_eq!(hiragana_length(&keys("kitte")), Some(3)); // きって
         assert_eq!(hiragana_length(&keys("gakkou")), Some(4)); // がっこう
         assert_eq!(hiragana_length(&keys("shashin")), Some(4)); // しゃしん
@@ -729,6 +943,131 @@ mod tests {
     }
 
     #[test]
+    fn small_kana_and_extended_syllables_have_the_correct_length() {
+        for (roman, kana) in [
+            ("xa", "ぁ"),
+            ("la", "ぁ"),
+            ("xi", "ぃ"),
+            ("li", "ぃ"),
+            ("xu", "ぅ"),
+            ("lu", "ぅ"),
+            ("xe", "ぇ"),
+            ("le", "ぇ"),
+            ("xo", "ぉ"),
+            ("lo", "ぉ"),
+            ("xya", "ゃ"),
+            ("lya", "ゃ"),
+            ("xyu", "ゅ"),
+            ("lyu", "ゅ"),
+            ("xyo", "ょ"),
+            ("lyo", "ょ"),
+            ("xtu", "っ"),
+            ("ltu", "っ"),
+            ("xtsu", "っ"),
+            ("ltsu", "っ"),
+            ("xwa", "ゎ"),
+            ("lwa", "ゎ"),
+            ("xka", "ヵ"),
+            ("lka", "ヵ"),
+            ("xke", "ヶ"),
+            ("lke", "ヶ"),
+            ("xn", "ん"),
+            ("thi", "てぃ"),
+            ("dhi", "でぃ"),
+            ("dhu", "でゅ"),
+            ("tsa", "つぁ"),
+            ("tsi", "つぃ"),
+            ("tse", "つぇ"),
+            ("tso", "つぉ"),
+            ("wi", "うぃ"),
+            ("we", "うぇ"),
+            ("whu", "う"),
+            ("qa", "くぁ"),
+            ("qi", "くぃ"),
+            ("qu", "く"),
+            ("gwa", "ぐぁ"),
+            ("she", "しぇ"),
+            ("che", "ちぇ"),
+            ("dya", "ぢゃ"),
+            ("dyu", "ぢゅ"),
+            ("dyo", "ぢょ"),
+            ("fyu", "ふゅ"),
+            ("vya", "ゔゃ"),
+            ("hwyu", "ふゅ"),
+            ("texisuto", "てぃすと"),
+            ("maxtucha", "まっちゃ"),
+        ] {
+            assert_eq!(
+                hiragana_length(&keys(roman)),
+                Some(kana.chars().count()),
+                "{roman} → {kana}"
+            );
+        }
+    }
+
+    #[test]
+    fn delete_discards_composition_instead_of_popping_one_physical_key() {
+        let mut state = InputState::default();
+        for key in keys("ka") {
+            state.key_down(key.keycode.into(), key.shift, false);
+        }
+        state.key_down(51, false, false); // Deletes か, not the physical a.
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 0),
+            Some(Action::Switch(Side::English))
+        );
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 100),
+            Some(Action::Switch(Side::English))
+        );
+    }
+
+    #[test]
+    fn overlapping_commands_do_not_turn_the_final_release_into_a_new_press() {
+        let mut state = InputState::default();
+        for (key, time) in [
+            (LEFT_COMMAND, 0),
+            (RIGHT_COMMAND, 1),
+            (LEFT_COMMAND, 2),
+            (RIGHT_COMMAND, 3),
+        ] {
+            assert_eq!(state.command_changed(key, time), None);
+        }
+        assert_eq!(
+            tap(&mut state, RIGHT_COMMAND, 100),
+            Some(Action::Switch(Side::Japanese))
+        );
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 200),
+            Some(Action::Switch(Side::English))
+        );
+    }
+
+    #[test]
+    fn clicking_while_command_is_held_cancels_the_single_tap() {
+        let mut state = InputState::default();
+        assert_eq!(state.command_changed(LEFT_COMMAND, 0), None);
+        state.clear(); // Mouse down, including Command-click.
+        assert_eq!(state.command_changed(LEFT_COMMAND, 10), None);
+    }
+
+    #[test]
+    fn overflowing_a_composition_disables_replacement_until_a_boundary() {
+        let mut state = InputState::default();
+        for key in keys(&"ka".repeat(65)) {
+            state.key_down(key.keycode.into(), key.shift, false);
+        }
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 0),
+            Some(Action::Switch(Side::English))
+        );
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 100),
+            Some(Action::Switch(Side::English))
+        );
+    }
+
+    #[test]
     fn unsupported_physical_input_fails_safely() {
         assert_eq!(
             roman_text(&[RecordedKey {
@@ -737,5 +1076,263 @@ mod tests {
             }]),
             None
         );
+    }
+
+    #[test]
+    fn consecutive_n_pairs_commit_only_one_character_per_pair() {
+        for (roman, kana) in [
+            ("nnka", "んか"),
+            ("nnn", "んん"),
+            ("nnnn", "んん"),
+            ("kannpai", "かんぱい"),
+            ("konnnitiha", "こんにちは"),
+            ("kanna", "かんな"),
+            ("konnya", "こんにゃ"),
+        ] {
+            assert_eq!(
+                hiragana_length(&keys(roman)),
+                Some(kana.chars().count()),
+                "{roman}"
+            );
+        }
+    }
+
+    #[test]
+    fn alphabetic_symbol_shortcuts_count_as_one_rendered_character() {
+        for roman in ["zh", "zj", "zk", "zl"] {
+            assert_eq!(hiragana_length(&keys(roman)), Some(1));
+        }
+        assert_eq!(hiragana_length(&keys("kazh")), Some(2)); // か←
+    }
+
+    #[test]
+    fn all_overlapping_command_orders_recover_for_the_next_single_tap() {
+        for (first, second) in [(LEFT_COMMAND, RIGHT_COMMAND), (RIGHT_COMMAND, LEFT_COMMAND)] {
+            for release_first in [first, second] {
+                let release_second = if release_first == first {
+                    second
+                } else {
+                    first
+                };
+                let mut state = InputState::default();
+                for (time, key) in [first, second, release_first, release_second]
+                    .into_iter()
+                    .enumerate()
+                {
+                    assert_eq!(state.command_changed(key, time as u64), None);
+                }
+                assert_eq!(
+                    tap(&mut state, LEFT_COMMAND, 100),
+                    Some(Action::Switch(Side::English))
+                );
+                assert_eq!(
+                    tap(&mut state, RIGHT_COMMAND, 200),
+                    Some(Action::Switch(Side::Japanese))
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn repeated_conversions_preserve_text_and_timing_boundaries() {
+        // Reuse one state across 4,968 conversions, including left/right
+        // switches, successful replacements, and expired double taps.
+        let mut state = InputState::default();
+        let mut now = 1_000;
+        for delay in 1..=552 {
+            for (roman, kana) in [
+                ("aka", "あか"),
+                ("konnnitiha", "こんにちは"),
+                ("gakkou", "がっこう"),
+                ("shashin", "しゃしん"),
+                ("maxtucha", "まっちゃ"),
+                ("thi", "てぃ"),
+                ("kfa", "ｋふぁ"),
+                ("nnka", "んか"),
+                ("xya", "ゃ"),
+            ] {
+                assert_eq!(
+                    tap(&mut state, RIGHT_COMMAND, now),
+                    Some(Action::Switch(Side::Japanese))
+                );
+                let recorded = keys(roman);
+                for key in &recorded {
+                    state.key_down(key.keycode.into(), key.shift, false);
+                }
+                assert_eq!(
+                    tap(&mut state, LEFT_COMMAND, now + 10),
+                    Some(Action::Switch(Side::English))
+                );
+                let action = tap(&mut state, LEFT_COMMAND, now + 10 + delay);
+                if delay <= 550 {
+                    assert_eq!(
+                        action,
+                        Some(Action::ReplaceWithEnglish(recorded.clone())),
+                        "{roman}, {delay}ms"
+                    );
+                    assert_eq!(hiragana_length(&recorded), Some(kana.chars().count()));
+                    assert_eq!(roman_text(&recorded).as_deref(), Some(roman));
+                } else {
+                    assert_eq!(action, Some(Action::Switch(Side::English)));
+                }
+                now += 2_000;
+            }
+        }
+    }
+
+    #[test]
+    fn deletion_and_overflow_stay_blocked_until_a_boundary() {
+        for overflow in [false, true] {
+            let mut state = InputState::default();
+            for _ in 0..if overflow { 129 } else { 1 } {
+                state.key_down(0, false, false);
+            }
+            if !overflow {
+                state.key_down(51, false, false);
+            }
+            for key in keys("kya") {
+                state.key_down(key.keycode.into(), key.shift, false);
+            }
+            assert!(state.typed.is_empty());
+            state.key_down(49, false, false);
+            for key in keys("aka") {
+                state.key_down(key.keycode.into(), key.shift, false);
+            }
+            tap(&mut state, LEFT_COMMAND, 0);
+            assert_eq!(
+                tap(&mut state, LEFT_COMMAND, 100),
+                Some(Action::ReplaceWithEnglish(keys("aka")))
+            );
+        }
+    }
+
+    #[test]
+    fn japanese_switch_resumes_recording_after_english_and_blocked_input() {
+        for japanese_key in [RIGHT_COMMAND, 104] {
+            let mut state = InputState::default();
+            tap(&mut state, LEFT_COMMAND, 0);
+            state.key_down(51, false, false);
+            if japanese_key == RIGHT_COMMAND {
+                tap(&mut state, RIGHT_COMMAND, 100);
+            } else {
+                state.key_down(japanese_key, false, false);
+            }
+            for key in keys("aka") {
+                state.key_down(key.keycode.into(), key.shift, false);
+            }
+            tap(&mut state, LEFT_COMMAND, 200);
+            assert_eq!(
+                tap(&mut state, LEFT_COMMAND, 300),
+                Some(Action::ReplaceWithEnglish(keys("aka")))
+            );
+        }
+    }
+
+    #[test]
+    fn command_modifier_chords_discard_existing_candidates() {
+        for side in [LEFT_COMMAND, RIGHT_COMMAND] {
+            for modifier in [56, 59, 58] {
+                // Shift, Control, Option.
+                for modifier_first in [false, true] {
+                    let mut state = InputState::default();
+                    for key in keys("aka") {
+                        state.key_down(key.keycode.into(), key.shift, false);
+                    }
+                    if modifier_first {
+                        assert_eq!(state.flags_changed(modifier, 0, false, true), None);
+                        assert_eq!(state.flags_changed(side, 1, true, true), None);
+                    } else {
+                        assert_eq!(state.flags_changed(side, 0, true, false), None);
+                        assert_eq!(state.flags_changed(modifier, 1, true, true), None);
+                    }
+                    assert_eq!(state.flags_changed(side, 2, false, true), None);
+                    assert_eq!(state.flags_changed(modifier, 3, false, false), None);
+                    assert_eq!(
+                        tap(&mut state, LEFT_COMMAND, 100),
+                        Some(Action::Switch(Side::English))
+                    );
+                    assert_eq!(
+                        tap(&mut state, LEFT_COMMAND, 200),
+                        Some(Action::Switch(Side::English))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn google_double_tap_uses_native_conversion_without_a_length_estimate() {
+        for roman in ["", "konnnitiha", "nnya", "Kya", "gakkou", "lto"] {
+            for delay in [1, 200, 499, 500, 550, 551] {
+                let mut state = InputState::default();
+                state.set_native_english_conversion(true);
+                for key in keys(roman) {
+                    state.key_down(key.keycode.into(), key.shift, false);
+                }
+                assert_eq!(
+                    tap(&mut state, LEFT_COMMAND, 0),
+                    Some(Action::Switch(Side::English))
+                );
+                // The first Eisu may select a different input source. Keep the
+                // original provider attached to this double-tap candidate.
+                state.set_native_english_conversion(false);
+                let expected = if delay <= 550 {
+                    Action::NativeEnglishDoubleTap
+                } else {
+                    Action::Switch(Side::English)
+                };
+                assert_eq!(
+                    tap(&mut state, LEFT_COMMAND, delay),
+                    Some(expected),
+                    "{roman}, {delay}ms"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn google_native_conversion_does_not_depend_on_the_recorded_word() {
+        let mut state = InputState::default();
+        state.set_native_english_conversion(true);
+        for _ in 0..129 {
+            state.key_down(0, false, false);
+        }
+        state.key_down(51, false, false);
+        assert!(state.typed.is_empty());
+        tap(&mut state, LEFT_COMMAND, 0);
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 100),
+            Some(Action::NativeEnglishDoubleTap)
+        );
+    }
+
+    #[test]
+    fn boundaries_cancel_a_pending_google_native_conversion() {
+        for boundary in [36, 49, 51, 123] {
+            let mut state = InputState::default();
+            state.set_native_english_conversion(true);
+            tap(&mut state, LEFT_COMMAND, 0);
+            state.key_down(boundary, false, false);
+            assert_eq!(
+                tap(&mut state, LEFT_COMMAND, 100),
+                Some(Action::Switch(Side::English))
+            );
+        }
+        let mut state = InputState::default();
+        state.set_native_english_conversion(true);
+        tap(&mut state, LEFT_COMMAND, 0);
+        state.clear(); // Focus moved by a click.
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 100),
+            Some(Action::Switch(Side::English))
+        );
+    }
+
+    #[test]
+    fn shifted_input_does_not_use_a_lowercase_deletion_estimate() {
+        for roman in ["Ka", "Kya", "KANJI", "aKa"] {
+            assert_eq!(hiragana_length(&keys(roman)), None);
+            assert_eq!(roman_text(&keys(roman)).as_deref(), Some(roman));
+        }
     }
 }
