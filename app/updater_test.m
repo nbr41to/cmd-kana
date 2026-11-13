@@ -55,6 +55,19 @@ int main(void) {
         assert(IsSHA256(FileSHA256(input)));
         assert(!IsSHA256(@"not a checksum"));
 
+        NSString *source = [root stringByAppendingPathComponent:@"architecture.c"];
+        NSString *executable = [root stringByAppendingPathComponent:@"architecture-test"];
+        assert([@"int main(void) { return 0; }\n" writeToFile:source
+            atomically:YES encoding:NSUTF8StringEncoding error:NULL]);
+        NSTask *compile = [[NSTask alloc] init];
+        compile.executableURL = [NSURL fileURLWithPath:@"/usr/bin/xcrun"];
+        compile.arguments = @[@"clang", @"-arch", @"arm64", source, @"-o", executable];
+        assert([compile launchAndReturnError:NULL]);
+        [compile waitUntilExit];
+        assert(compile.terminationStatus == 0);
+        assert(SupportsAppleSilicon(executable));
+        assert(!SupportsAppleSilicon(input));
+
         NSString *zip = [root stringByAppendingPathComponent:@"update.zip"];
         NSString *destination = [root stringByAppendingPathComponent:@"extracted"];
         assert([files createDirectoryAtPath:destination withIntermediateDirectories:NO attributes:nil error:NULL]);

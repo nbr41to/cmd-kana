@@ -24,7 +24,7 @@ test "$(plutil -extract CFBundleVersion raw "$app/Contents/Info.plist")" = \
     "$(plutil -extract CFBundleVersion raw "$project_dir/app/Info.plist")"
 test "$(plutil -extract LSMinimumSystemVersion raw "$app/Contents/Info.plist")" = \
     "$(plutil -extract LSMinimumSystemVersion raw "$project_dir/app/Info.plist")"
-lipo -verify_arch arm64 "$app/Contents/MacOS/cmd-kana"
+lipo "$app/Contents/MacOS/cmd-kana" -verify_arch arm64
 xcrun vtool -show-build "$app/Contents/MacOS/cmd-kana" > "$temporary/build.txt"
 python3 - "$temporary/build.txt" <<'PY'
 from pathlib import Path

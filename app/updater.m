@@ -144,6 +144,18 @@ static BOOL HasMatchingSignature(NSString *current, NSString *candidate) {
     return valid;
 }
 
+static BOOL SupportsAppleSilicon(NSString *executable) {
+    NSTask *task = [[NSTask alloc] init];
+    task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/lipo"];
+    // -verify_arch consumes all following arguments as architecture names.
+    task.arguments = @[executable, @"-verify_arch", @"arm64"];
+    task.standardOutput = NSFileHandle.fileHandleWithNullDevice;
+    task.standardError = NSFileHandle.fileHandleWithNullDevice;
+    BOOL launched = [task launchAndReturnError:NULL];
+    if (launched) [task waitUntilExit];
+    return launched && task.terminationStatus == 0;
+}
+
 @interface CmdKanaUpdater ()
 @property(readwrite) BOOL busy;
 @property(strong) NSURLSession *session;
@@ -375,14 +387,7 @@ static BOOL HasMatchingSignature(NSString *current, NSString *candidate) {
         } else if (!HasMatchingSignature(target, candidate)) {
             failure = @"アプリの署名が無効か、現在のアプリと署名の条件が一致しません。";
         } else {
-            NSTask *architecture = [[NSTask alloc] init];
-            architecture.executableURL = [NSURL fileURLWithPath:@"/usr/bin/lipo"];
-            architecture.arguments = @[@"-verify_arch", @"arm64", executable];
-            architecture.standardOutput = NSFileHandle.fileHandleWithNullDevice;
-            architecture.standardError = NSFileHandle.fileHandleWithNullDevice;
-            BOOL launched = [architecture launchAndReturnError:NULL];
-            if (launched) [architecture waitUntilExit];
-            if (!launched || architecture.terminationStatus != 0) {
+            if (!SupportsAppleSilicon(executable)) {
                 failure = @"このMacに対応する実行ファイルを確認できませんでした。";
             } else if (![files copyItemAtPath:candidate toPath:staged error:NULL] ||
                 ![files copyItemAtPath:NSBundle.mainBundle.executablePath toPath:helper error:NULL] ||
