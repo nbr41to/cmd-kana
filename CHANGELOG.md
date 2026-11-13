@@ -4,9 +4,13 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-13
+
 - Added on-demand GitHub Releases checks and in-app download, verification, replacement, and restart.
 - Preserve the previous app until the updated app finishes launching; roll back failed installations or launches.
 - Renamed the existing restart action to distinguish it from downloading an update.
+- Added download, installation, privacy, license, and uninstall guidance.
+- Added a verified Developer ID/notarization path for preparing a draft public release.
 
 ## [0.9.3] - 2026-11-12
 

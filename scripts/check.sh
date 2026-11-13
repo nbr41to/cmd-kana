@@ -3,6 +3,10 @@ set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_dir"
+MACOSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET:-11.0}
+export MACOSX_DEPLOYMENT_TARGET
+
+python3 scripts/check-release.py
 
 mkdir -p target/tests
 cc -std=c11 -Wall -Wextra -Werror app/update_version_test.c -o target/tests/update-version

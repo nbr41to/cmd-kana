@@ -10,6 +10,8 @@ Run the complete local gate on macOS:
 
 It verifies formatting, unit tests, Clippy warnings, release compilation, plist validity, version consistency, and the app signature. Update tests cover numeric version comparison, SHA-256, archive containment, matching/tampered code signatures, transactional replacement, and rollback after a failed startup. The installer tests use real temporary directories, including paths with spaces and Japanese characters.
 
+CI also checks release metadata consistency and verifies that a correctly packaged, ad-hoc-signed development ZIP is rejected by the public-release gate. This rejection test exercises a fresh extraction, checksum, bundled license notices, version/build, architecture, and the advertised minimum OS before requiring the Developer ID signature. Successful notarization and interactive checks require the signing workflow and the versioned release checklist.
+
 The pure Rust tests cover:
 
 - left/right Command single taps;

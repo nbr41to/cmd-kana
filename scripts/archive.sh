@@ -13,5 +13,5 @@ checksum="$archive.sha256"
 mkdir -p "$dist"
 rm -f "$archive" "$checksum"
 COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent "$app" "$archive"
-shasum -a 256 "$archive" > "$checksum"
+(cd "$dist" && shasum -a 256 "$(basename -- "$archive")" > "$(basename -- "$checksum")")
 echo "$archive"

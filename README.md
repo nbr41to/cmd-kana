@@ -68,6 +68,8 @@ cmd-kanaは、JISキーボードの「英数」「かな」に近い操作をUS�
 >
 > 現在、GitHub Releasesにダウンロード用の正式版は公開されていません。Developer ID署名・Apple公証済みアプリの公開までは、下記の手順でソースからビルドしてください。GitHub Actionsのテスト用成果物は、一般配布版ではありません。
 
+次の配布候補は **0.10.0** です。[リリースノート案](docs/releases/v0.10.0.md)と[公開前の確認状況](docs/releases/v0.10.0-checklist.md)を参照できます。
+
 ### 配布版をインストールする（正式版の公開後）
 
 1. [Releases](https://github.com/nbr41to/cmd-kana/releases)で最新版のリリースノートと対応環境を確認します。

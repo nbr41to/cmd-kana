@@ -21,6 +21,10 @@ jobs:
         run: rustup component add rustfmt clippy
       - name: Check pure input logic
         run: ./scripts/check-input.sh
+      - name: Check release metadata
+        run: python3 scripts/check-release.py
+      - name: Check release metadata regressions
+        run: python3 -m unittest discover -s tests -p 'test_release.py'
 
   macos:
     runs-on: macos-latest
@@ -32,6 +36,8 @@ jobs:
         run: ./scripts/check.sh
       - name: Create test distribution
         run: ./scripts/archive.sh
+      - name: Reject development ZIP as a public release
+        run: ./scripts/test-public-release.sh
       - name: Upload app bundle
         uses: actions/upload-artifact@v4
         with:
