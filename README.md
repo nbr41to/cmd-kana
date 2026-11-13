@@ -64,11 +64,13 @@ cmd-kanaは、JISキーボードの「英数」「かな」に近い操作をUS�
 
 公式の配布先は、このリポジトリの[GitHub Releases](https://github.com/nbr41to/cmd-kana/releases)です。公開されたバージョンの変更点は[変更履歴](CHANGELOG.md)から確認できます。
 
-> **配布方針：無料の未公証版**
+> **配布状況：0.10.0（無料・未公証版）を公開中**
 >
 > Apple Developer Programを利用せず、GitHub Releasesで配布します。Developer ID署名・Apple公証は行っていないため、初回起動時にmacOSの警告が出る場合があります。以下の「警告が表示された場合」の手順を確認してください。
 
-配布対象の **0.10.0** の[変更点](docs/releases/v0.10.0.md)と[確認状況](docs/releases/v0.10.0-checklist.md)も参照できます。公開済みの最新版とダウンロード用ファイルは[Releases](https://github.com/nbr41to/cmd-kana/releases/latest)で確認してください。
+[**0.10.0のアプリZIPをダウンロード**](https://github.com/nbr41to/cmd-kana/releases/download/v0.10.0/cmd-kana-0.10.0-macos.zip) · [チェックサム](https://github.com/nbr41to/cmd-kana/releases/download/v0.10.0/cmd-kana-0.10.0-macos.zip.sha256)
+
+**0.10.0** の[変更点](docs/releases/v0.10.0.md)と[確認状況](docs/releases/v0.10.0-checklist.md)も参照できます。公開済みの最新版とダウンロード用ファイルは[Releases](https://github.com/nbr41to/cmd-kana/releases/latest)で確認してください。
 
 ### 配布版をインストールする
 
