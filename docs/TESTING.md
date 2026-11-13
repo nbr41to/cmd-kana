@@ -68,6 +68,7 @@ Automated tests cannot reproduce macOS TCC permissions, every focused text contr
 | English input | After a left Command switch, typing `kya` and double-tapping left Command leaves exactly `kya`; switching back with right Command restores Japanese conversion. |
 | Controls | Verify TextEdit, Terminal, Safari, Chrome, and at least one Electron editor. |
 | Settings | Window opens on launch and reopen; menu-bar visibility persists; Check for Updates works while the menu-bar item is hidden. |
+| Download source | Both the Settings button beside the version and the menu item open the latest GitHub Release in the default browser. The Settings button remains available with a hidden menu bar; failure to launch a browser shows the URL. |
 | Login item | On macOS 13+, enabling and disabling launch at login matches System Settings; a denied item reports that approval is required; login launch stays in the menu bar without opening Settings. |
 | Upgrade | Updating over the previous release preserves macOS permissions and settings. |
 | Lifecycle | Restart restarts once; Quit exits; no duplicate processes remain. |
