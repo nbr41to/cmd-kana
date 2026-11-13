@@ -48,6 +48,14 @@ jobs:
             echo "publish=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          visibility=$(gh repo view "$GITHUB_REPOSITORY" --json visibility --jq .visibility)
+          if [ "$visibility" != PUBLIC ]; then
+            echo "::warning::Public distribution is pending: this repository is not Public. Anonymous downloads and app updates are unavailable."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "### Public distribution is pending repository visibility" >> "$GITHUB_STEP_SUMMARY"
+            echo "The repository owner must make this repository Public before it can serve unauthenticated downloads or app updates." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           state=new
           if existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish 2>/dev/null); then
             draft=$(printf '%s' "$existing" | python3 -c 'import json,sys; print(str(json.load(sys.stdin)["isDraft"]).lower())')

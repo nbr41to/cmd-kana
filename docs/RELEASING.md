@@ -20,6 +20,8 @@ The publication request is explicit in `.github/release.json`:
 
 After a successful **push CI run on this repository's current main commit**, [Release unnotarized app](https://github.com/nbr41to/cmd-kana/actions/workflows/release.yml) reads this plan. A manual Run workflow on `main` is also supported. Fork/PR CI runs do not trigger publication.
 
+The repository must be **Public**. A published Release inside a Private repository is visible only to authorized users, and the app's unauthenticated update requests cannot read it. The workflow checks visibility and skips publication with an explicit pending notice while the repository is Private. Only the owner should change visibility after reviewing the source and history that will become public.
+
 The workflow:
 
 1. Checks matching package, lockfile, bundle, changelog, release documents, and publication-plan versions.
