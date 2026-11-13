@@ -4,6 +4,8 @@
 #include "vendor/libarchive/archive.h"
 #include "vendor/libarchive/archive_entry.h"
 #include "update_version.h"
+#include <limits.h>
+#include <stdlib.h>
 
 static const unsigned long long MaxArchiveSize = 100 * 1024 * 1024;
 
@@ -34,6 +36,11 @@ static NSString *FileSHA256(NSString *path) {
 
 // Only extract entries inside cmd-kana.app, without following archive symlinks.
 static BOOL ExtractApp(NSString *zip, NSString *destination) {
+    // macOS temporary paths can contain /var -> /private/var symlinks.
+    // Resolve the existing extraction directory before enabling symlink protection.
+    char resolved[PATH_MAX];
+    if (!realpath(destination.fileSystemRepresentation, resolved)) return NO;
+    destination = [NSString stringWithUTF8String:resolved];
     struct archive *reader = archive_read_new();
     struct archive *writer = archive_write_disk_new();
     archive_read_support_format_zip(reader);
@@ -81,6 +88,7 @@ static BOOL ExtractApp(NSString *zip, NSString *destination) {
         // Do not restore special permission bits from a ZIP.
         archive_entry_set_perm(entry, archive_entry_perm(entry) & 0777);
         if (archive_write_header(writer, entry) != ARCHIVE_OK) {
+            fprintf(stderr, "cmd-kana update: archive header: %s\n", archive_error_string(writer));
             succeeded = NO;
             break;
         }
@@ -90,17 +98,32 @@ static BOOL ExtractApp(NSString *zip, NSString *destination) {
         int readStatus;
         while ((readStatus = archive_read_data_block(reader, &buffer, &length, &offset)) == ARCHIVE_OK) {
             if (offset < 0 || (unsigned long long)offset > (unsigned long long)size ||
-                length > (unsigned long long)size - (unsigned long long)offset ||
-                archive_write_data_block(writer, buffer, length, offset) != ARCHIVE_OK) {
+                length > (unsigned long long)size - (unsigned long long)offset) {
+                fprintf(stderr, "cmd-kana update: archive data exceeds declared size\n");
+                succeeded = NO;
+                break;
+            }
+            if (archive_write_data_block(writer, buffer, length, offset) != ARCHIVE_OK) {
+                fprintf(stderr, "cmd-kana update: archive data: %s\n", archive_error_string(writer));
                 succeeded = NO;
                 break;
             }
         }
-        if (readStatus != ARCHIVE_EOF || archive_write_finish_entry(writer) != ARCHIVE_OK) succeeded = NO;
+        if (readStatus != ARCHIVE_EOF) {
+            fprintf(stderr, "cmd-kana update: archive read: %s\n", archive_error_string(reader));
+            succeeded = NO;
+        }
+        if (archive_write_finish_entry(writer) != ARCHIVE_OK) {
+            fprintf(stderr, "cmd-kana update: archive entry: %s\n", archive_error_string(writer));
+            succeeded = NO;
+        }
     }
     if (status != ARCHIVE_EOF || entryCount == 0) succeeded = NO;
     archive_read_free(reader);
-    if (archive_write_close(writer) != ARCHIVE_OK) succeeded = NO;
+    if (archive_write_close(writer) != ARCHIVE_OK) {
+        fprintf(stderr, "cmd-kana update: archive close: %s\n", archive_error_string(writer));
+        succeeded = NO;
+    }
     archive_write_free(writer);
     return succeeded;
 }
