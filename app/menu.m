@@ -3,9 +3,11 @@
 #import <CoreServices/CoreServices.h>
 #import <ServiceManagement/ServiceManagement.h>
 #import <Carbon/Carbon.h>
+#import "updater.h"
 
 extern bool start_event_monitoring(void);
 extern bool is_event_monitoring(void);
+extern void mark_update_ready(void);
 
 bool uses_native_english_conversion(void) {
     TISInputSourceRef source = TISCopyCurrentKeyboardInputSource();
@@ -29,6 +31,9 @@ bool uses_native_english_conversion(void) {
 @property(strong) NSTextField *listenStatusLabel;
 @property(strong) NSTextField *postStatusLabel;
 @property(strong) NSTimer *monitoringRetryTimer;
+@property(strong) NSButton *checkUpdatesButton;
+@property(strong) NSTextField *updateStatusLabel;
+@property(strong) CmdKanaUpdater *updater;
 @end
 
 bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
@@ -89,6 +94,7 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
         target:self selector:@selector(retryEventMonitoring:)
         userInfo:nil repeats:YES];
     if (![self wasLaunchedAsLoginItem]) [self showSettings:nil];
+    mark_update_ready();
 }
 
 - (NSTextField *)labelWithText:(NSString *)text frame:(NSRect)frame {
@@ -112,7 +118,7 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
 
 - (void)createSettingsWindow {
     self.settingsWindow = [[NSWindow alloc]
-        initWithContentRect:NSMakeRect(0, 0, 460, 340)
+        initWithContentRect:NSMakeRect(0, 0, 460, 400)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
         backing:NSBackingStoreBuffered defer:NO];
     self.settingsWindow.title = @"cmd-kana 設定";
@@ -120,54 +126,67 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
     [self.settingsWindow center];
     NSView *content = self.settingsWindow.contentView;
 
-    NSTextField *title = [self labelWithText:@"cmd-kana" frame:NSMakeRect(24, 292, 300, 28)];
+    NSTextField *title = [self labelWithText:@"cmd-kana" frame:NSMakeRect(24, 352, 300, 28)];
     title.font = [NSFont boldSystemFontOfSize:20];
     [content addSubview:title];
 
-    self.menuBarCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(24, 250, 260, 24)];
+    self.menuBarCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(24, 310, 260, 24)];
     self.menuBarCheckbox.buttonType = NSSwitchButton;
     self.menuBarCheckbox.title = @"メニューバーに表示する";
     self.menuBarCheckbox.target = self;
     self.menuBarCheckbox.action = @selector(toggleMenuBar:);
     [content addSubview:self.menuBarCheckbox];
 
-    self.loginItemCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(24, 216, 210, 24)];
+    self.loginItemCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(24, 276, 210, 24)];
     self.loginItemCheckbox.buttonType = NSSwitchButton;
     self.loginItemCheckbox.title = @"ログイン時に起動する";
     self.loginItemCheckbox.target = self;
     self.loginItemCheckbox.action = @selector(toggleLoginItem:);
     [content addSubview:self.loginItemCheckbox];
 
-    self.loginItemStatusLabel = [self labelWithText:@"" frame:NSMakeRect(250, 216, 185, 24)];
+    self.loginItemStatusLabel = [self labelWithText:@"" frame:NSMakeRect(250, 276, 185, 24)];
     self.loginItemStatusLabel.alignment = NSTextAlignmentRight;
     self.loginItemStatusLabel.textColor = [NSColor secondaryLabelColor];
     [content addSubview:self.loginItemStatusLabel];
 
-    NSTextField *permissions = [self labelWithText:@"アクセス許可" frame:NSMakeRect(24, 172, 200, 24)];
+    NSTextField *permissions = [self labelWithText:@"アクセス許可" frame:NSMakeRect(24, 232, 200, 24)];
     permissions.font = [NSFont boldSystemFontOfSize:13];
     [content addSubview:permissions];
 
-    self.listenStatusLabel = [self labelWithText:@"" frame:NSMakeRect(24, 137, 260, 24)];
+    self.listenStatusLabel = [self labelWithText:@"" frame:NSMakeRect(24, 197, 260, 24)];
     [content addSubview:self.listenStatusLabel];
     [content addSubview:[self buttonWithTitle:@"入力監視を開く"
-        action:@selector(openInputMonitoring:) frame:NSMakeRect(300, 133, 135, 30)]];
+        action:@selector(openInputMonitoring:) frame:NSMakeRect(300, 193, 135, 30)]];
 
-    self.postStatusLabel = [self labelWithText:@"" frame:NSMakeRect(24, 100, 260, 24)];
+    self.postStatusLabel = [self labelWithText:@"" frame:NSMakeRect(24, 160, 260, 24)];
     [content addSubview:self.postStatusLabel];
     [content addSubview:[self buttonWithTitle:@"アクセシビリティを開く"
-        action:@selector(openAccessibility:) frame:NSMakeRect(280, 96, 155, 30)]];
+        action:@selector(openAccessibility:) frame:NSMakeRect(280, 156, 155, 30)]];
     [content addSubview:[self buttonWithTitle:@"動かない場合"
-        action:@selector(showPermissionHelp:) frame:NSMakeRect(24, 69, 115, 28)]];
+        action:@selector(showPermissionHelp:) frame:NSMakeRect(24, 129, 115, 28)]];
 
     NSString *version = [[NSBundle mainBundle]
         objectForInfoDictionaryKey:@"CFBundleShortVersionString"] ?: @"不明";
     [content addSubview:[self labelWithText:
         [NSString stringWithFormat:@"バージョン %@", version]
-        frame:NSMakeRect(24, 42, 220, 24)]];
-    [content addSubview:[self buttonWithTitle:@"アプリを更新"
-        action:@selector(updateApp:) frame:NSMakeRect(195, 32, 115, 32)]];
+        frame:NSMakeRect(24, 102, 220, 24)]];
+    self.updateStatusLabel = [self labelWithText:@"GitHub Releasesで最新版を確認します"
+        frame:NSMakeRect(24, 70, 411, 24)];
+    self.updateStatusLabel.textColor = [NSColor secondaryLabelColor];
+    [content addSubview:self.updateStatusLabel];
+    self.checkUpdatesButton = [self buttonWithTitle:@"更新を確認…"
+        action:@selector(checkForUpdates:) frame:NSMakeRect(24, 32, 155, 32)];
+    [content addSubview:self.checkUpdatesButton];
+    [content addSubview:[self buttonWithTitle:@"再起動"
+        action:@selector(restartApp:) frame:NSMakeRect(195, 32, 115, 32)]];
     [content addSubview:[self buttonWithTitle:@"アプリを終了"
         action:@selector(quitApp:) frame:NSMakeRect(320, 32, 115, 32)]];
+    self.updater = [[CmdKanaUpdater alloc] init];
+    __weak CmdKanaDelegate *weakSelf = self;
+    self.updater.statusChanged = ^(NSString *message, BOOL busy) {
+        weakSelf.updateStatusLabel.stringValue = message;
+        weakSelf.checkUpdatesButton.enabled = !busy;
+    };
     [self updatePermissionStatus];
 }
 
@@ -200,9 +219,14 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
     [menu addItem:settings];
 
     NSMenuItem *update = [[NSMenuItem alloc]
-        initWithTitle:@"更新" action:@selector(updateApp:) keyEquivalent:@"r"];
+        initWithTitle:@"更新を確認…" action:@selector(checkForUpdates:) keyEquivalent:@""];
     update.target = self;
     [menu addItem:update];
+
+    NSMenuItem *restart = [[NSMenuItem alloc]
+        initWithTitle:@"再起動" action:@selector(restartApp:) keyEquivalent:@"r"];
+    restart.target = self;
+    [menu addItem:restart];
 
     NSMenuItem *quit = [[NSMenuItem alloc]
         initWithTitle:@"閉じる" action:@selector(quitApp:) keyEquivalent:@"q"];
@@ -345,7 +369,15 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
         @"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"]];
 }
 
-- (void)updateApp:(id)sender {
+- (BOOL)validateMenuItem:(NSMenuItem *)item {
+    return item.action != @selector(checkForUpdates:) || !self.updater.busy;
+}
+
+- (void)checkForUpdates:(id)sender {
+    [self.updater checkForUpdates];
+}
+
+- (void)restartApp:(id)sender {
     NSString *executablePath = [NSBundle mainBundle].executablePath;
     if (executablePath) {
         NSTask *task = [[NSTask alloc] init];

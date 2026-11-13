@@ -8,7 +8,7 @@ Run the complete local gate on macOS:
 ./scripts/check.sh
 ```
 
-It verifies formatting, unit tests, Clippy warnings, release compilation, plist validity, version consistency, and the app signature.
+It verifies formatting, unit tests, Clippy warnings, release compilation, plist validity, version consistency, and the app signature. Update tests cover numeric version comparison, SHA-256, archive containment, matching/tampered code signatures, transactional replacement, and rollback after a failed startup. The installer tests use real temporary directories, including paths with spaces and Japanese characters.
 
 The pure Rust tests cover:
 
@@ -65,10 +65,14 @@ Automated tests cannot reproduce macOS TCC permissions, every focused text contr
 | Modifier chords | Command-click, Shift/Control/Option with Command, and all overlapping left/right Command release orders do not switch modes; the next standalone tap still works. |
 | English input | After a left Command switch, typing `kya` and double-tapping left Command leaves exactly `kya`; switching back with right Command restores Japanese conversion. |
 | Controls | Verify TextEdit, Terminal, Safari, Chrome, and at least one Electron editor. |
-| Settings | Window opens on launch and reopen; menu-bar visibility persists; Update works while the menu-bar item is hidden. |
+| Settings | Window opens on launch and reopen; menu-bar visibility persists; Check for Updates works while the menu-bar item is hidden. |
 | Login item | On macOS 13+, enabling and disabling launch at login matches System Settings; a denied item reports that approval is required; login launch stays in the menu bar without opening Settings. |
 | Upgrade | Updating over the previous release preserves macOS permissions and settings. |
-| Lifecycle | Menu Update restarts once; Quit exits; no duplicate processes remain. |
+| Lifecycle | Restart restarts once; Quit exits; no duplicate processes remain. |
+| Update status | Test no published Release (404), offline/timeout, API rate limit, malformed JSON, equal/older release, and a newer numeric version such as 0.10.0 after 0.9.3. Errors must not report that the installed app is up to date. |
+| Update assets | Test missing ZIP/checksum, invalid SHA-256, wrong bundle ID/version, wrong architecture, invalid signature, and a different signing identity. The running app must remain unchanged. |
+| Update installation | From a writable directory, accept an update and verify one replacement process, preserved settings/permissions, a startup acknowledgment, and removal of the backup and temporary files. Repeat with a hidden menu-bar item. |
+| Update failure | Test a read-only app directory, failed download, failed rename, and an app that exits before Cocoa finishes launching. No quit on download/verification errors; installation/startup errors must restore the previous app and report the failure. |
 | Duplicate launch | Start the app repeatedly and overlap login/manual launch; exactly one process and menu-bar item remain. |
 
 Record the macOS version, architecture, IME/version, tested apps, and result in the release notes.

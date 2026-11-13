@@ -4,6 +4,10 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+- Added on-demand GitHub Releases checks and in-app download, verification, replacement, and restart.
+- Preserve the previous app until the updated app finishes launching; roll back failed installations or launches.
+- Renamed the existing restart action to distinguish it from downloading an update.
+
 ## [0.9.3] - 2026-11-12
 
 - Corrected replacement lengths for small kana, extended romaji syllables, alphabetic symbol shortcuts, and consecutive `nn` pairs.

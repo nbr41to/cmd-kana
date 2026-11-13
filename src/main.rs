@@ -11,6 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 mod input;
+mod update;
 use input::{hiragana_length, roman_text, Action, InputState, RecordedKey, Side};
 
 type CFTypeRef = *const c_void;
@@ -74,6 +75,7 @@ extern "C" {
 
 extern "C" {
     fn run_menu_bar_app();
+    fn show_update_install_error(message: *const c_char);
     fn replace_previous_text(length: CFIndex, replacement_utf8: *const c_char) -> bool;
     fn uses_native_english_conversion() -> bool;
     fn getuid() -> u32;
@@ -129,6 +131,11 @@ pub extern "C" fn is_event_monitoring() -> bool {
     STATE
         .get()
         .is_some_and(|state| state.lock().unwrap().tap.is_some())
+}
+
+#[no_mangle]
+pub extern "C" fn mark_update_ready() {
+    update::mark_update_ready(&std::env::args_os().collect::<Vec<_>>());
 }
 
 #[no_mangle]
@@ -277,6 +284,16 @@ extern "C" fn event_callback(
 }
 
 fn main() {
+    if let Some(result) = update::run_installer(&std::env::args_os().collect::<Vec<_>>()) {
+        if let Err(message) = result {
+            eprintln!("cmd-kana: {message}");
+            if let Ok(message) = CString::new(message) {
+                unsafe { show_update_install_error(message.as_ptr()) };
+            }
+            std::process::exit(1);
+        }
+        return;
+    }
     wait_for_previous_instance();
     if !acquire_instance_lock() {
         eprintln!("cmd-kana: すでに起動しています");

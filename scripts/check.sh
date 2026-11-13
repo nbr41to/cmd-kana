@@ -4,6 +4,13 @@ set -eu
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$project_dir"
 
+mkdir -p target/tests
+cc -std=c11 -Wall -Wextra -Werror app/update_version_test.c -o target/tests/update-version
+target/tests/update-version
+xcrun clang -fobjc-arc -fblocks app/updater_test.m -framework Cocoa -framework Security \
+    -larchive -o target/tests/updater
+target/tests/updater
+
 if [ -n "${CARGO:-}" ]; then
     cargo_bin=$CARGO
 elif command -v cargo >/dev/null 2>&1; then
