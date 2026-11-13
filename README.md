@@ -244,3 +244,5 @@ Issueは公開されます。パスワード、個人情報、実際の私的な
 ## ライセンス
 
 [MIT License](LICENSE)
+
+同梱するlibarchiveの公開ヘッダーはBSD 2-Clauseライセンスです。出典とライセンス全文は[第三者ライセンス表記](app/vendor/libarchive/NOTICE.txt)を参照してください。配布アプリにも同じ表記を同梱しています。

@@ -34,4 +34,5 @@ fn main() {
     println!("cargo:rerun-if-changed=app/update_version.h");
     println!("cargo:rerun-if-changed=app/updater.h");
     println!("cargo:rerun-if-changed=app/updater.m");
+    println!("cargo:rerun-if-changed=app/vendor/libarchive");
 }

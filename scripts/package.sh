@@ -17,6 +17,7 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp "$project_dir/app/Info.plist" "$app/Contents/Info.plist"
 cp "$project_dir/target/release/cmd-kana" "$app/Contents/MacOS/cmd-kana"
 cp "$project_dir/app/assets/cmd-kana-logo.png" "$app/Contents/Resources/AppIcon.png"
+cp "$project_dir/app/vendor/libarchive/NOTICE.txt" "$app/Contents/Resources/ThirdPartyNotices.txt"
 
 if [ "$signing_identity" = "-" ]; then
     # Keep local privacy permissions valid across ad-hoc development builds.

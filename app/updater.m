@@ -1,8 +1,8 @@
 #import "updater.h"
 #import <Security/Security.h>
 #import <CommonCrypto/CommonDigest.h>
-#include <archive.h>
-#include <archive_entry.h>
+#include "vendor/libarchive/archive.h"
+#include "vendor/libarchive/archive_entry.h"
 #include "update_version.h"
 
 static const unsigned long long MaxArchiveSize = 100 * 1024 * 1024;
