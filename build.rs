@@ -25,6 +25,20 @@ fn main() {
         .expect("failed to run clang");
     assert!(status.success(), "failed to compile the macOS updater");
     println!("cargo:rustc-link-arg={}", updater.display());
+    // Rust uses -nodefaultlibs, so Clang's availability-check runtime is not
+    // added automatically for @available calls when targeting older macOS.
+    let resources = Command::new("xcrun")
+        .args(["clang", "-print-resource-dir"])
+        .output()
+        .expect("failed to locate the Clang runtime");
+    assert!(
+        resources.status.success(),
+        "failed to locate the Clang runtime"
+    );
+    let resources = String::from_utf8(resources.stdout).expect("invalid Clang resource path");
+    let runtime = PathBuf::from(resources.trim()).join("lib/darwin/libclang_rt.osx.a");
+    assert!(runtime.is_file(), "Clang's macOS runtime is missing");
+    println!("cargo:rustc-link-arg={}", runtime.display());
     println!("cargo:rustc-link-lib=framework=Cocoa");
     println!("cargo:rustc-link-lib=framework=ServiceManagement");
     println!("cargo:rustc-link-lib=framework=Carbon");
