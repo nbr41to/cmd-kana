@@ -27,7 +27,7 @@ if [ "$signing_identity" = "-" ]; then
     codesign --force --deep --sign - \
         --requirements '=designated => identifier "local.cmd-kana"' "$app"
 else
-    # Public releases should use a Developer ID Application identity.
+    # Optional Developer ID builds for maintainers with a paid Apple membership.
     codesign --force --deep --options runtime --timestamp \
         --sign "$signing_identity" "$app"
 fi

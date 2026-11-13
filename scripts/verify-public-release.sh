@@ -1,11 +1,18 @@
 #!/bin/sh
-# Validate the exact ZIP intended for public distribution, not a development app.
+# Validate a distribution ZIP. Apple notarization is an explicit optional mode.
 set -eu
 
 project_dir=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 version=$(python3 "$project_dir/scripts/check-release.py" --version-only)
-archive=${1:-"$project_dir/target/dist/cmd-kana-$version-macos-notarized.zip"}
-expected_name="cmd-kana-$version-macos-notarized.zip"
+mode=unnotarized
+suffix=macos
+if [ "${1:-}" = --notarized ]; then
+    mode=notarized
+    suffix=macos-notarized
+    shift
+fi
+expected_name="cmd-kana-$version-$suffix.zip"
+archive=${1:-"$project_dir/target/dist/$expected_name"}
 test "$(uname -s)" = Darwin || { echo "Public signature checks require macOS." >&2; exit 1; }
 test "$(basename -- "$archive")" = "$expected_name" || { echo "Unexpected archive name." >&2; exit 1; }
 test -f "$archive" && test -f "$archive.sha256"
@@ -38,6 +45,14 @@ if not versions or any(normalized(version) > (11, 0, 0) for version in versions)
 PY
 codesign --verify --deep --strict "$app"
 signature=$(codesign -dv --verbose=4 "$app" 2>&1)
+if [ "$mode" = unnotarized ]; then
+    case "$signature" in
+        *"Signature=adhoc"*) ;;
+        *) echo "The free distribution must use the documented ad-hoc signature." >&2; exit 1 ;;
+    esac
+    echo "Verified unnotarized distribution ZIP (no Apple developer identity or notarization): $expected_name"
+    exit 0
+fi
 case "$signature" in
     *"Authority=Developer ID Application:"*) ;;
     *) echo "A Developer ID Application signature is required." >&2; exit 1 ;;

@@ -1,6 +1,7 @@
 """Release metadata mismatches must fail before signing or uploading artifacts."""
 
 import importlib.util
+import json
 from pathlib import Path
 import plistlib
 import shutil
@@ -18,7 +19,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        for name in ("Cargo.toml", "Cargo.lock", "CHANGELOG.md", "app/Info.plist"):
+        for name in ("Cargo.toml", "Cargo.lock", "CHANGELOG.md", "app/Info.plist", ".github/release.json"):
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, path)
@@ -45,6 +46,22 @@ class ReleaseMetadataTests(unittest.TestCase):
     def test_missing_release_notes_is_rejected(self):
         (self.root / "docs/releases" / f"v{self.version}.md").unlink()
         with self.assertRaisesRegex(ValueError, "Release notes"):
+            MODULE.validate(self.root)
+
+    def test_different_publication_version_is_rejected(self):
+        path = self.root / ".github/release.json"
+        plan = json.loads(path.read_text())
+        plan["version"] = "999.999.999"
+        path.write_text(json.dumps(plan))
+        with self.assertRaisesRegex(ValueError, "publication plan version"):
+            MODULE.validate(self.root)
+
+    def test_string_publish_flag_cannot_enable_publication(self):
+        path = self.root / ".github/release.json"
+        plan = json.loads(path.read_text())
+        plan["publish"] = "true"
+        path.write_text(json.dumps(plan))
+        with self.assertRaisesRegex(ValueError, "boolean publish flag"):
             MODULE.validate(self.root)
 
 

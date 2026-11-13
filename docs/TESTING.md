@@ -10,7 +10,7 @@ Run the complete local gate on macOS:
 
 It verifies formatting, unit tests, Clippy warnings, release compilation, plist validity, version consistency, and the app signature. Update tests cover numeric version comparison, SHA-256, archive containment, matching/tampered code signatures, transactional replacement, and rollback after a failed startup. The installer tests use real temporary directories, including paths with spaces and Japanese characters.
 
-CI also checks release metadata consistency and verifies that a correctly packaged, ad-hoc-signed development ZIP is rejected by the public-release gate. This rejection test exercises a fresh extraction, checksum, bundled license notices, version/build, architecture, and the advertised minimum OS before requiring the Developer ID signature. Successful notarization and interactive checks require the signing workflow and the versioned release checklist.
+CI also checks release metadata consistency and the explicit publication plan. A correctly packaged ad-hoc-signed ZIP must pass the free-distribution gate, while checksum corruption and falsely labeling that ZIP as notarized must fail. These tests exercise a fresh extraction, checksum, bundled license notices, version/build, architecture, and the advertised minimum OS. Apple notarization is not part of the chosen free-distribution policy; use `verify-public-release.sh --notarized` only for the optional Developer ID route.
 
 The pure Rust tests cover:
 
@@ -54,7 +54,7 @@ These are real Mozc engine results. The mapping from macOS Eisu events to engine
 
 ## Manual release matrix
 
-Automated tests cannot reproduce macOS TCC permissions, every focused text control, or a real IME. Before release, test the notarized build in a clean macOS user account.
+Automated tests cannot reproduce macOS TCC permissions, every focused text control, or a real IME. Use the released ZIP in a clean macOS user account for these checks and record which remain unverified. The unnotarized release notes disclose this coverage limit.
 
 | Area | Required check |
 | --- | --- |

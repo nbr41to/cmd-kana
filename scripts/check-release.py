@@ -2,6 +2,7 @@
 """Check release metadata without Apple credentials or a macOS SDK."""
 
 import argparse
+import json
 from pathlib import Path
 import plistlib
 import re
@@ -28,6 +29,11 @@ def validate(root):
     for suffix in (".md", "-checklist.md"):
         if not (root / "docs/releases" / ("v" + version + suffix)).is_file():
             raise ValueError("Release notes or validation checklist are missing")
+    plan = json.loads((root / ".github/release.json").read_text())
+    if plan.get("version") != version:
+        raise ValueError("Release publication plan version differs from the app")
+    if plan.get("distribution") != "unnotarized" or type(plan.get("publish")) is not bool:
+        raise ValueError("Release plan must explicitly select unnotarized distribution and a boolean publish flag")
     return version
 
 

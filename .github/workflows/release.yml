@@ -1,7 +1,11 @@
-name: Prepare notarized release
+name: Release unnotarized app
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
@@ -11,106 +15,113 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  prepare:
-    if: github.ref == 'refs/heads/main'
+  publish:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository &&
+       github.event.workflow_run.head_sha == github.sha)
     runs-on: macos-latest
     permissions:
       contents: write
     env:
       MACOSX_DEPLOYMENT_TARGET: '11.0'
+      CODESIGN_IDENTITY: '-'
     steps:
       - uses: actions/checkout@v4
-      - name: Check release version
-        id: metadata
-        run: |
-          version=$(python3 scripts/check-release.py --version-only)
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          test "$(uname -m)" = arm64
-      - name: Check Apple signing settings
-        env:
-          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: |
-          for name in MACOS_CERTIFICATE_BASE64 MACOS_CERTIFICATE_PASSWORD CODESIGN_IDENTITY APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER_ID; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::Missing repository secret: $name. See docs/RELEASING.md."
-              exit 1
-            fi
-          done
-      - name: Install Rust components
-        run: rustup component add rustfmt clippy
-      - name: Run release checks
-        run: ./scripts/check.sh
-      - name: Import temporary signing identity
-        env:
-          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-        run: |
-          keychain="$RUNNER_TEMP/cmd-kana-signing.keychain-db"
-          password=$(openssl rand -base64 32)
-          echo "::add-mask::$password"
-          security create-keychain -p "$password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$password" "$keychain"
-          security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
-          python3 - <<'PY'
-          import base64
-          import os
-          from pathlib import Path
-          for variable, filename in [("MACOS_CERTIFICATE_BASE64", "cmd-kana-signing.p12"),
-                                     ("APPLE_API_KEY_BASE64", "cmd-kana-notary.p8")]:
-              path = Path(os.environ["RUNNER_TEMP"]) / filename
-              path.write_bytes(base64.b64decode(os.environ[variable]))
-              path.chmod(0o600)
-          PY
-          security import "$RUNNER_TEMP/cmd-kana-signing.p12" -k "$keychain" -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain"
-          xcrun notarytool store-credentials cmd-kana-ci --key "$RUNNER_TEMP/cmd-kana-notary.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --keychain "$keychain"
-      - name: Sign, notarize, and verify distribution ZIP
-        env:
-          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
-          NOTARY_PROFILE: cmd-kana-ci
-          NOTARY_KEYCHAIN: ${{ runner.temp }}/cmd-kana-signing.keychain-db
-        run: ./scripts/notarize.sh
-      - name: Upload verified ZIP for review
-        uses: actions/upload-artifact@v4
         with:
-          name: cmd-kana-${{ steps.metadata.outputs.version }}-notarized
-          path: |
-            target/dist/*-notarized.zip
-            target/dist/*-notarized.zip.sha256
-          if-no-files-found: error
-          retention-days: 30
-      - name: Create draft Release
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Validate publication plan and existing Release
+        id: plan
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ steps.metadata.outputs.version }}
-          RELEASE_TAG: ${{ steps.metadata.outputs.tag }}
         run: |
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::error::A Release already exists for $RELEASE_TAG; it will not be overwritten."
-            exit 1
+          version=$(python3 scripts/check-release.py --version-only)
+          tag="v$version"
+          source_commit=$(git rev-parse HEAD)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "source=$source_commit" >> "$GITHUB_OUTPUT"
+          requested=$(python3 -c 'import json; print(str(json.load(open(".github/release.json"))["publish"]).lower())')
+          if [ "$requested" != true ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
-          gh release create "$RELEASE_TAG" \
-            "target/dist/cmd-kana-$RELEASE_VERSION-macos-notarized.zip" \
-            "target/dist/cmd-kana-$RELEASE_VERSION-macos-notarized.zip.sha256" \
-            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --draft \
-            --title "cmd-kana $RELEASE_VERSION" --notes-file "docs/releases/$RELEASE_TAG.md"
-          echo "### Signed release draft prepared" >> "$GITHUB_STEP_SUMMARY"
-          echo "Complete docs/releases/$RELEASE_TAG-checklist.md before publishing the draft." >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove signing credentials
-        if: always()
+          state=new
+          if existing=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,targetCommitish 2>/dev/null); then
+            draft=$(printf '%s' "$existing" | python3 -c 'import json,sys; print(str(json.load(sys.stdin)["isDraft"]).lower())')
+            if [ "$draft" = false ]; then
+              echo "Release $tag is already public and will not be changed."
+              echo "publish=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            target=$(printf '%s' "$existing" | python3 -c 'import json,sys; print(json.load(sys.stdin)["targetCommitish"])')
+            test "$target" = "$source_commit" || { echo "::error::Existing draft belongs to a different source commit."; exit 1; }
+            state=draft
+          fi
+          if tag_commit=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
+            test "$tag_commit" = "$source_commit" || { echo "::error::An existing tag must not be moved or reused."; exit 1; }
+          fi
+          test "$(uname -m)" = arm64
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+      - name: Install Rust components
+        if: steps.plan.outputs.publish == 'true'
+        run: rustup component add rustfmt clippy
+      - name: Run release checks
+        if: steps.plan.outputs.publish == 'true'
         run: |
-          keychain="$RUNNER_TEMP/cmd-kana-signing.keychain-db"
-          if [ -f "$keychain" ]; then
-            security delete-keychain "$keychain"
+          ./scripts/check.sh
+          python3 -m unittest discover -s tests -p 'test_release.py'
+      - name: Build and verify unnotarized distribution
+        if: steps.plan.outputs.publish == 'true'
+        run: |
+          ./scripts/archive.sh
+          ./scripts/test-public-release.sh
+      - name: Upload verified distribution
+        if: steps.plan.outputs.publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cmd-kana-${{ steps.plan.outputs.version }}-unnotarized
+          path: |
+            target/dist/*-macos.zip
+            target/dist/*-macos.zip.sha256
+          if-no-files-found: error
+          retention-days: 30
+      - name: Stage complete Release assets
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ steps.plan.outputs.version }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+          RELEASE_SOURCE: ${{ steps.plan.outputs.source }}
+          RELEASE_STATE: ${{ steps.plan.outputs.state }}
+        run: |
+          zip="target/dist/cmd-kana-$RELEASE_VERSION-macos.zip"
+          if [ "$RELEASE_STATE" = new ]; then
+            gh release create "$RELEASE_TAG" "$zip" "$zip.sha256" \
+              --repo "$GITHUB_REPOSITORY" --target "$RELEASE_SOURCE" --draft \
+              --title "cmd-kana $RELEASE_VERSION（未公証版）" --notes-file "docs/releases/$RELEASE_TAG.md"
+          else
+            gh release upload "$RELEASE_TAG" "$zip" "$zip.sha256" --repo "$GITHUB_REPOSITORY" --clobber
           fi
-          rm -f "$RUNNER_TEMP/cmd-kana-signing.p12" "$RUNNER_TEMP/cmd-kana-notary.p8"
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets > "$RUNNER_TEMP/cmd-kana-assets.json"
+          python3 - "$RUNNER_TEMP/cmd-kana-assets.json" "$RELEASE_VERSION" <<'PY'
+          import json
+          import sys
+          assets = {asset["name"]: asset for asset in json.load(open(sys.argv[1]))["assets"]}
+          name = f"cmd-kana-{sys.argv[2]}-macos.zip"
+          for required in (name, name + ".sha256"):
+              if required not in assets or assets[required]["size"] <= 0:
+                  sys.exit(f"Missing or empty release asset: {required}")
+          PY
+      - name: Publish verified unnotarized Release
+        if: steps.plan.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          echo "### Published $RELEASE_TAG (unnotarized)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Apple Developer Program credentials were not used. First launch may require Open Anyway in macOS Privacy & Security." >> "$GITHUB_STEP_SUMMARY"

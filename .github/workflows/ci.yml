@@ -36,7 +36,7 @@ jobs:
         run: ./scripts/check.sh
       - name: Create test distribution
         run: ./scripts/archive.sh
-      - name: Reject development ZIP as a public release
+      - name: Verify free distribution and reject false notarization
         run: ./scripts/test-public-release.sh
       - name: Upload app bundle
         uses: actions/upload-artifact@v4

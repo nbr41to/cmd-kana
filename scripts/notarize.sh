@@ -30,5 +30,5 @@ archive="$dist/cmd-kana-$version-macos-notarized.zip"
 rm -f "$archive" "$archive.sha256"
 COPYFILE_DISABLE=1 ditto -c -k --norsrc --keepParent "$app" "$archive"
 (cd "$dist" && shasum -a 256 "$(basename -- "$archive")" > "$(basename -- "$archive").sha256")
-"$project_dir/scripts/verify-public-release.sh" "$archive"
+"$project_dir/scripts/verify-public-release.sh" --notarized "$archive"
 echo "$archive"

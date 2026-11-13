@@ -10,7 +10,7 @@ All notable changes are documented here. This project follows Semantic Versionin
 - Preserve the previous app until the updated app finishes launching; roll back failed installations or launches.
 - Renamed the existing restart action to distinguish it from downloading an update.
 - Added download, installation, privacy, license, and uninstall guidance.
-- Added a verified Developer ID/notarization path for preparing a draft public release.
+- Added a free, unnotarized GitHub Release flow, with optional Developer ID/notarization tooling for future use.
 - Corrected the updater's Apple Silicon executable check and added a native regression test.
 
 ## [0.9.3] - 2026-11-12
