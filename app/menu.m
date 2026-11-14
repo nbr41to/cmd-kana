@@ -170,6 +170,10 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
     [content addSubview:[self labelWithText:
         [NSString stringWithFormat:@"バージョン %@", version]
         frame:NSMakeRect(24, 102, 220, 24)]];
+    NSButton *downloadSource = [self buttonWithTitle:@"ダウンロード元（GitHub）"
+        action:@selector(openDownloadPage:) frame:NSMakeRect(245, 98, 190, 30)];
+    downloadSource.toolTip = @"GitHub Releasesの最新版ページをブラウザで開きます";
+    [content addSubview:downloadSource];
     self.updateStatusLabel = [self labelWithText:@"GitHub Releasesで最新版を確認します"
         frame:NSMakeRect(24, 70, 411, 24)];
     self.updateStatusLabel.textColor = [NSColor secondaryLabelColor];
@@ -222,6 +226,12 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
         initWithTitle:@"更新を確認…" action:@selector(checkForUpdates:) keyEquivalent:@""];
     update.target = self;
     [menu addItem:update];
+
+    NSMenuItem *downloadSource = [[NSMenuItem alloc]
+        initWithTitle:@"ダウンロード元（GitHub）" action:@selector(openDownloadPage:) keyEquivalent:@""];
+    downloadSource.target = self;
+    [menu addItem:downloadSource];
+    [menu addItem:[NSMenuItem separatorItem]];
 
     NSMenuItem *restart = [[NSMenuItem alloc]
         initWithTitle:@"再起動" action:@selector(restartApp:) keyEquivalent:@"r"];
@@ -375,6 +385,20 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
 
 - (void)checkForUpdates:(id)sender {
     [self.updater checkForUpdates];
+}
+
+- (void)openDownloadPage:(id)sender {
+    NSURL *url = [NSURL URLWithString:@"https://github.com/nbr41to/cmd-kana/releases/latest"];
+    if (![[NSWorkspace sharedWorkspace] openURL:url]) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.alertStyle = NSAlertStyleWarning;
+        alert.messageText = @"ブラウザを開けませんでした";
+        alert.informativeText = [NSString stringWithFormat:
+            @"次のURLをブラウザで開いてください。\n%@", url.absoluteString];
+        [alert addButtonWithTitle:@"OK"];
+        [NSApp activateIgnoringOtherApps:YES];
+        [alert runModal];
+    }
 }
 
 - (void)restartApp:(id)sender {

@@ -4,6 +4,9 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+- Added a "Download source (GitHub)" button in Settings and a matching menu-bar item that open the latest GitHub Release in the default browser.
+- Show the download URL when the default browser cannot be opened.
+
 ## [0.10.0] - 2026-11-13
 
 - Added on-demand GitHub Releases checks and in-app download, verification, replacement, and restart.
