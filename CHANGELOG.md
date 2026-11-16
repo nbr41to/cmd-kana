@@ -4,6 +4,8 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-11-16
+
 - Shortened the Settings/menu link label to "GitHub" and changed its destination to the repository top page.
 
 ## [0.10.1] - 2026-11-15

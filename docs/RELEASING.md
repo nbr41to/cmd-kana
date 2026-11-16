@@ -4,7 +4,7 @@
 
 cmd-kana is distributed for free through GitHub Releases **without Apple Developer Program membership**. The normal `-macos.zip` contains an ad-hoc-signed app, not a Developer ID-signed or Apple-notarized app. The signature permits integrity checks but does not establish an Apple-verified publisher identity. macOS can block its first launch until the user explicitly allows this app in Privacy & Security.
 
-The current release version/build is `0.10.1` / `25`. See [release notes](releases/v0.10.1.md) and [validation records](releases/v0.10.1-checklist.md). Keep unperformed interactive checks marked as unverified; CI success does not establish behavior in every IME or focused application.
+The current release version/build is `0.10.2` / `26`. See [release notes](releases/v0.10.2.md) and [validation records](releases/v0.10.2-checklist.md). Keep unperformed interactive checks marked as unverified; CI success does not establish behavior in every IME or focused application.
 
 ## Publish from main
 
@@ -12,7 +12,7 @@ The publication request is explicit in `.github/release.json`:
 
 ```json
 {
-  "version": "0.10.1",
+  "version": "0.10.2",
   "distribution": "unnotarized",
   "publish": true
 }
@@ -35,7 +35,7 @@ Set `publish` to `false` to prepare changes without publishing a new version. Ex
 
 ## Prepare the next version
 
-1. Choose an unused stable version such as `0.10.2`.
+1. Choose an unused stable version such as `0.10.3`.
 2. Update `Cargo.toml`, `Cargo.lock`, and `CFBundleShortVersionString` in `app/Info.plist`; increment `CFBundleVersion`.
 3. Move the relevant `CHANGELOG.md` entries into a dated section for that version.
 4. Add `docs/releases/vVERSION.md` and `vVERSION-checklist.md`. Release notes must disclose the lack of Apple notarization and explain the per-app first-launch exception.
@@ -59,7 +59,7 @@ On an Apple Silicon Mac with Rust, Xcode Command Line Tools, and Python 3:
 Checksums use relative filenames, so downloads can be checked from the containing directory:
 
 ```sh
-shasum -a 256 -c cmd-kana-0.10.1-macos.zip.sha256
+shasum -a 256 -c cmd-kana-0.10.2-macos.zip.sha256
 ```
 
 ZIPs must be at most 100 MiB and contain only the `cmd-kana.app` tree without AppleDouble metadata. Include `LICENSE.txt` and `ThirdPartyNotices.txt` in the app resources. Keep the bundle identifier and designated signing requirement stable across updates, and retain the `--update-complete` startup acknowledgment.
