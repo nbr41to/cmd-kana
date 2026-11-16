@@ -14,7 +14,7 @@ cmd-kana requires Input Monitoring and Accessibility permissions to observe Comm
 
 ## Updates
 
-The "Download source (GitHub)" action opens `https://github.com/nbr41to/cmd-kana/releases/latest` in the user's default browser. Browser requests use that browser's settings/session; the app does not attach input history or credentials to the URL.
+The "GitHub" action opens the repository at `https://github.com/nbr41to/cmd-kana` in the user's default browser. Browser requests use that browser's settings/session; the app does not attach input history or credentials to the URL.
 
 Official free distributions are ad-hoc signed and are not Apple-notarized or Developer ID-signed. macOS may require a per-app first-launch exception in Privacy & Security. This distribution does not disable Gatekeeper globally or remove quarantine automatically. Download through this repository's GitHub Releases; an ad-hoc identifier and a GitHub checksum do not constitute an Apple-verified publisher identity.
 

@@ -170,9 +170,9 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
     [content addSubview:[self labelWithText:
         [NSString stringWithFormat:@"バージョン %@", version]
         frame:NSMakeRect(24, 102, 220, 24)]];
-    NSButton *downloadSource = [self buttonWithTitle:@"ダウンロード元（GitHub）"
-        action:@selector(openDownloadPage:) frame:NSMakeRect(245, 98, 190, 30)];
-    downloadSource.toolTip = @"GitHub Releasesの最新版ページをブラウザで開きます";
+    NSButton *downloadSource = [self buttonWithTitle:@"GitHub"
+        action:@selector(openRepository:) frame:NSMakeRect(245, 98, 190, 30)];
+    downloadSource.toolTip = @"GitHubリポジトリをブラウザで開きます";
     [content addSubview:downloadSource];
     self.updateStatusLabel = [self labelWithText:@"GitHub Releasesで最新版を確認します"
         frame:NSMakeRect(24, 70, 411, 24)];
@@ -228,7 +228,7 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
     [menu addItem:update];
 
     NSMenuItem *downloadSource = [[NSMenuItem alloc]
-        initWithTitle:@"ダウンロード元（GitHub）" action:@selector(openDownloadPage:) keyEquivalent:@""];
+        initWithTitle:@"GitHub" action:@selector(openRepository:) keyEquivalent:@""];
     downloadSource.target = self;
     [menu addItem:downloadSource];
     [menu addItem:[NSMenuItem separatorItem]];
@@ -387,8 +387,8 @@ bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
     [self.updater checkForUpdates];
 }
 
-- (void)openDownloadPage:(id)sender {
-    NSURL *url = [NSURL URLWithString:@"https://github.com/nbr41to/cmd-kana/releases/latest"];
+- (void)openRepository:(id)sender {
+    NSURL *url = [NSURL URLWithString:@"https://github.com/nbr41to/cmd-kana"];
     if (![[NSWorkspace sharedWorkspace] openURL:url]) {
         NSAlert *alert = [[NSAlert alloc] init];
         alert.alertStyle = NSAlertStyleWarning;

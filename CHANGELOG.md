@@ -4,6 +4,8 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+- Shortened the Settings/menu link label to "GitHub" and changed its destination to the repository top page.
+
 ## [0.10.1] - 2026-11-15
 
 - Added a "Download source (GitHub)" button in Settings and a matching menu-bar item that open the latest GitHub Release in the default browser.
