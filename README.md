@@ -64,13 +64,13 @@ cmd-kanaは、JISキーボードの「英数」「かな」に近い操作をUS�
 
 公式の配布先は、このリポジトリの[GitHub Releases](https://github.com/nbr41to/cmd-kana/releases)です。公開されたバージョンの変更点は[変更履歴](CHANGELOG.md)から確認できます。
 
-> **配布状況：0.10.2（無料・未公証版）を公開中**
+> **0.10.3（無料・未公証版）**
 >
 > Apple Developer Programを利用せず、GitHub Releasesで配布します。Developer ID署名・Apple公証は行っていないため、初回起動時にmacOSの警告が出る場合があります。以下の「警告が表示された場合」の手順を確認してください。
 
-[**0.10.2のアプリZIPをダウンロード**](https://github.com/nbr41to/cmd-kana/releases/download/v0.10.2/cmd-kana-0.10.2-macos.zip) · [チェックサム](https://github.com/nbr41to/cmd-kana/releases/download/v0.10.2/cmd-kana-0.10.2-macos.zip.sha256)
+[**0.10.3のアプリZIPをダウンロード**](https://github.com/nbr41to/cmd-kana/releases/download/v0.10.3/cmd-kana-0.10.3-macos.zip) · [チェックサム](https://github.com/nbr41to/cmd-kana/releases/download/v0.10.3/cmd-kana-0.10.3-macos.zip.sha256)
 
-**0.10.2** の[変更点](docs/releases/v0.10.2.md)と[確認状況](docs/releases/v0.10.2-checklist.md)も参照できます。公開済みの最新版とダウンロード用ファイルは[Releases](https://github.com/nbr41to/cmd-kana/releases/latest)で確認してください。
+**0.10.3** の[変更点](docs/releases/v0.10.3.md)と[確認状況](docs/releases/v0.10.3-checklist.md)も参照できます。公開済みの最新版とダウンロード用ファイルは[Releases](https://github.com/nbr41to/cmd-kana/releases/latest)で確認してください。
 
 ### 配布版をインストールする
 
@@ -93,7 +93,7 @@ macOS 11・12では「システム環境設定 → セキュリティとプラ�
 ZIPと同じ「Assets」の `.zip.sha256` を同じフォルダへ保存すると、次のようにダウンロードの整合性を確認できます。
 
 ```sh
-shasum -a 256 -c cmd-kana-0.10.2-macos.zip.sha256
+shasum -a 256 -c cmd-kana-0.10.3-macos.zip.sha256
 ```
 
 ### ソースからビルドする
@@ -193,7 +193,7 @@ cmd-kanaは、入力切り替えと文字列の置換に必要な範囲でキー
 
 Google日本語入力とMozcでは、左Commandの2回押しをIME標準の英数2回押しへ渡します。未確定文字と元のキー列をIME自身が扱うため、アプリ側で未確定文字をDeleteしたり、表示文字数を推測して置換したりしません。
 
-その他のIMEでは、直前に連続入力された物理キー列を最大128キーまでメモリに記録します。Deleteによる編集後と128キーを超えた入力では、置換範囲を誤らないよう変換を取り消します。空白・改行などの境界、または右Commandによるかなへの切り替えで記録を再開します。対応する入力欄ではアクセシビリティAPIでカーソル直前をローマ字へ直接置換し、対応しない入力欄のみDeleteと再入力へフォールバックします。Shiftを含む入力ではIME設定によって表示が変わるため、推測による置換を行いません。
+その他のIMEでは、直前に連続入力された物理キー列を最大128キーまでメモリに記録します。入力の途中でカーソル移動や文字選択、Deleteによる編集があった場合や、128キーを超えた場合は、空白・改行などの境界または右Commandによるかなへの切り替えまで記録を止めます。アクセシビリティAPIで置換できる入力欄で、選択範囲がないときにカーソル直前をローマ字へ置換します。選択範囲が残っている場合、置換に対応していない入力欄、Shiftを含む入力では、英数への切り替えのみ行います。
 
 入力イベントの判定とローマ字変換はテスト可能なRustコードへ分離し、macOSのUIとアクセシビリティ連携だけを小さなObjective-Cブリッジにまとめています。外部Rustクレートには依存していません。
 

@@ -4,6 +4,11 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-11-19
+
+- Pause input recording after caret movement or text selection during composition. Resume at the next input boundary.
+- Avoid simulated deletion when Accessibility cannot replace text, including when a selection is active.
+
 ## [0.10.2] - 2026-11-16
 
 - Shortened the Settings/menu link label to "GitHub" and changed its destination to the repository top page.

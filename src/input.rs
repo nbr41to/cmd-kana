@@ -431,17 +431,17 @@ impl InputState {
     ) -> Option<Action> {
         if keycode != LEFT_COMMAND && keycode != RIGHT_COMMAND {
             if command || self.held != 0 {
-                self.clear();
+                self.interrupt_recording();
             }
             return None;
         }
         if other_modifiers {
-            self.clear();
+            self.interrupt_recording();
         }
         let action = self.command_changed(keycode, now_ms);
         if other_modifiers {
             // On key-down, suppress the newly held Command as well.
-            self.clear();
+            self.interrupt_recording();
             None
         } else {
             action
@@ -504,19 +504,17 @@ impl InputState {
         if self.held == 0 {
             self.used_with_other_key = false;
         } else {
-            self.clear();
+            self.interrupt_recording();
         }
         self.held |= mask;
         None
     }
 
     pub fn key_down(&mut self, keycode: i64, shift: bool, shortcut: bool) {
-        if self.held != 0 {
-            self.clear();
-            return;
-        }
-        if shortcut {
-            self.clear();
+        // Home, End, Page Up/Down and the arrows can move the caret or select
+        // text inside an unfinished IME composition.
+        if self.held != 0 || shortcut || matches!(keycode, 115 | 116 | 119 | 121 | 123..=126) {
+            self.interrupt_recording();
             return;
         }
         if self.last_left_tap_ms.take().is_some() {
@@ -526,23 +524,23 @@ impl InputState {
         self.last_right_tap_ms = None;
         match keycode {
             102 | 104 => {
-                self.clear();
+                self.reset_recording();
                 self.english_selected = keycode == 102;
             }
-            51 => {
+            51 | 117 => {
                 // IMEs delete rendered characters, not physical keys. Without
                 // observing the composition, its remaining extent is unknown.
-                self.typed.clear();
+                self.clear_candidate();
                 self.recording_blocked = true;
             }
-            36 | 48 | 49 | 53 | 76 | 123..=126 => self.clear(),
+            36 | 48 | 49 | 53 | 76 => self.reset_recording(),
             0..=127 => {
                 let key = RecordedKey {
                     keycode: keycode as u16,
                     shift,
                 };
                 if key.us_letter().is_none() {
-                    self.clear();
+                    self.clear_candidate();
                     return;
                 }
                 if self.recording_blocked || self.english_selected {
@@ -556,16 +554,27 @@ impl InputState {
                 }
                 self.typed.push(key);
             }
-            _ => self.clear(),
+            _ => self.clear_candidate(),
         }
     }
 
-    pub fn clear(&mut self) {
+    pub fn interrupt_recording(&mut self) {
+        // Without a composition boundary, later keys may still edit the same
+        // marked text and cannot be used to calculate a replacement range.
+        self.recording_blocked |= !self.typed.is_empty();
+        self.clear_candidate();
+    }
+
+    fn reset_recording(&mut self) {
+        self.clear_candidate();
+        self.recording_blocked = false;
+    }
+
+    fn clear_candidate(&mut self) {
         if self.held != 0 {
             self.used_with_other_key = true;
         }
         self.typed.clear();
-        self.recording_blocked = false;
         self.last_left_tap_ms = None;
         self.last_left_tap_native = false;
         self.last_right_tap_ms = None;
@@ -697,8 +706,9 @@ mod tests {
         let mut state = InputState::default();
         state.key_down(0, false, false);
         state.command_changed(LEFT_COMMAND, 0);
-        state.key_down(8, false, true); // Command-C
+        state.key_down(0, false, true); // Command-A selects text.
         assert_eq!(state.command_changed(LEFT_COMMAND, 10), None);
+        state.key_down(0, false, false);
         assert_eq!(
             tap(&mut state, LEFT_COMMAND, 100),
             Some(Action::Switch(Side::English))
@@ -801,6 +811,69 @@ mod tests {
         assert_eq!(
             tap(&mut state, LEFT_COMMAND, 100),
             Some(Action::Switch(Side::English))
+        );
+    }
+
+    #[test]
+    fn navigation_during_a_composition_blocks_replacement_of_following_input() {
+        for keycode in [115, 116, 119, 121, 123, 124, 125, 126] {
+            for (shift, shortcut) in [(false, false), (true, false), (true, true)] {
+                let mut state = InputState::default();
+                for key in keys("aka") {
+                    state.key_down(key.keycode.into(), false, false);
+                }
+                state.key_down(keycode, shift, shortcut);
+                for key in keys("kya") {
+                    state.key_down(key.keycode.into(), false, false);
+                }
+                assert_eq!(
+                    tap(&mut state, LEFT_COMMAND, 0),
+                    Some(Action::Switch(Side::English))
+                );
+                assert_eq!(
+                    tap(&mut state, LEFT_COMMAND, 100),
+                    Some(Action::Switch(Side::English)),
+                    "keycode {keycode}, shift {shift}, shortcut {shortcut}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn clicking_during_a_composition_blocks_recording_until_confirmation() {
+        let mut state = InputState::default();
+        for key in keys("aka") {
+            state.key_down(key.keycode.into(), false, false);
+        }
+        state.interrupt_recording();
+        for key in keys("kya") {
+            state.key_down(key.keycode.into(), false, false);
+        }
+        assert!(state.typed.is_empty());
+
+        state.key_down(36, false, false); // Return confirms the current input.
+        for key in keys("kya") {
+            state.key_down(key.keycode.into(), false, false);
+        }
+        tap(&mut state, LEFT_COMMAND, 0);
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 100),
+            Some(Action::ReplaceWithEnglish(keys("kya")))
+        );
+    }
+
+    #[test]
+    fn moving_or_selecting_committed_text_allows_recording_fresh_input() {
+        let mut state = InputState::default();
+        state.interrupt_recording(); // Click in an existing text field.
+        state.key_down(123, true, false); // Shift+Left selects committed text.
+        for key in keys("kya") {
+            state.key_down(key.keycode.into(), false, false);
+        }
+        tap(&mut state, LEFT_COMMAND, 0);
+        assert_eq!(
+            tap(&mut state, LEFT_COMMAND, 100),
+            Some(Action::ReplaceWithEnglish(keys("kya")))
         );
     }
 
@@ -1007,19 +1080,23 @@ mod tests {
 
     #[test]
     fn delete_discards_composition_instead_of_popping_one_physical_key() {
-        let mut state = InputState::default();
-        for key in keys("ka") {
-            state.key_down(key.keycode.into(), key.shift, false);
+        for delete in [51, 117] {
+            let mut state = InputState::default();
+            for key in keys("ka") {
+                state.key_down(key.keycode.into(), key.shift, false);
+            }
+            state.key_down(delete, false, false);
+            state.key_down(123, false, false); // Moving again cannot recover the composition.
+            state.key_down(0, false, false);
+            assert_eq!(
+                tap(&mut state, LEFT_COMMAND, 0),
+                Some(Action::Switch(Side::English))
+            );
+            assert_eq!(
+                tap(&mut state, LEFT_COMMAND, 100),
+                Some(Action::Switch(Side::English))
+            );
         }
-        state.key_down(51, false, false); // Deletes か, not the physical a.
-        assert_eq!(
-            tap(&mut state, LEFT_COMMAND, 0),
-            Some(Action::Switch(Side::English))
-        );
-        assert_eq!(
-            tap(&mut state, LEFT_COMMAND, 100),
-            Some(Action::Switch(Side::English))
-        );
     }
 
     #[test]
@@ -1047,7 +1124,7 @@ mod tests {
     fn clicking_while_command_is_held_cancels_the_single_tap() {
         let mut state = InputState::default();
         assert_eq!(state.command_changed(LEFT_COMMAND, 0), None);
-        state.clear(); // Mouse down, including Command-click.
+        state.interrupt_recording(); // Mouse down, including Command-click.
         assert_eq!(state.command_changed(LEFT_COMMAND, 10), None);
     }
 
@@ -1321,7 +1398,7 @@ mod tests {
         let mut state = InputState::default();
         state.set_native_english_conversion(true);
         tap(&mut state, LEFT_COMMAND, 0);
-        state.clear(); // Focus moved by a click.
+        state.interrupt_recording(); // Focus moved by a click.
         assert_eq!(
             tap(&mut state, LEFT_COMMAND, 100),
             Some(Action::Switch(Side::English))

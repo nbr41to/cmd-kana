@@ -27,6 +27,7 @@ const FLAGS_CHANGED: u32 = 12;
 const KEY_DOWN: u32 = 10;
 const LEFT_MOUSE_DOWN: u32 = 1;
 const RIGHT_MOUSE_DOWN: u32 = 3;
+const OTHER_MOUSE_DOWN: u32 = 25;
 const TAP_DISABLED_TIMEOUT: u32 = 0xffff_fffe;
 const TAP_DISABLED_USER_INPUT: u32 = 0xffff_ffff;
 const SHIFT_FLAG: u64 = 1 << 17;
@@ -150,7 +151,8 @@ pub extern "C" fn start_event_monitoring() -> bool {
     let mask = (1u64 << FLAGS_CHANGED)
         | (1u64 << KEY_DOWN)
         | (1u64 << LEFT_MOUSE_DOWN)
-        | (1u64 << RIGHT_MOUSE_DOWN);
+        | (1u64 << RIGHT_MOUSE_DOWN)
+        | (1u64 << OTHER_MOUSE_DOWN);
     // Match cmd-eikana's proven architecture: session tap at head insert.
     let tap = unsafe { CGEventTapCreate(1, 0, 0, mask, event_callback, ptr::null_mut()) };
     if tap.is_null() {
@@ -162,7 +164,6 @@ pub extern "C" fn start_event_monitoring() -> bool {
         CFRelease(source);
         CGEventTapEnable(tap, true);
     }
-    state.input.clear();
     state.tap = Some(tap);
     eprintln!("cmd-kana: 入力監視を開始しました");
     true
@@ -200,15 +201,6 @@ unsafe fn replace_with_english(keys: Vec<RecordedKey>) {
     };
     if replace_previous_text(rendered_length as CFIndex, roman.as_ptr()) {
         switch_to(Side::English);
-        return;
-    }
-    // Legacy fallback for non-Google controls without AXSelectedText support.
-    // Google/Mozc marked text must use NativeEnglishDoubleTap instead.
-    for _ in 0..rendered_length {
-        post_key(51, 0); // Delete
-    }
-    for key in keys {
-        post_key(key.keycode, if key.shift { SHIFT_FLAG } else { 0 });
     }
 }
 
@@ -262,7 +254,9 @@ extern "C" fn event_callback(
                         flags & (COMMAND_FLAG | CONTROL_FLAG | OPTION_FLAG) != 0,
                     );
                 }
-                LEFT_MOUSE_DOWN | RIGHT_MOUSE_DOWN => state.input.clear(),
+                LEFT_MOUSE_DOWN | RIGHT_MOUSE_DOWN | OTHER_MOUSE_DOWN => {
+                    state.input.interrupt_recording();
+                }
                 _ => {}
             }
         }
