@@ -64,55 +64,52 @@ pub fn roman_text(keys: &[RecordedKey]) -> Option<String> {
         .collect()
 }
 
-pub fn hiragana_length(keys: &[RecordedKey]) -> Option<usize> {
-    if keys.iter().any(|key| key.shift) {
+pub fn hiragana_text(mut romaji: &str) -> Option<String> {
+    if romaji.is_empty() || !romaji.bytes().all(|byte| byte.is_ascii_lowercase()) {
         // Shift can select ASCII or Katakana according to the IME settings.
-        // A lowercase romaji estimate cannot safely describe that text.
         return None;
     }
-    // This is the legacy non-Google estimate. Google/Mozc must use its own
-    // native raw-text conversion, whose composition rules differ by mode.
-    let romaji = roman_text(keys)?;
-    let mut rest = romaji.as_str();
-    let mut length = 0;
-    while !rest.is_empty() {
-        let bytes = rest.as_bytes();
+    // The AX path checks this prediction against the text actually displayed.
+    let mut text = String::new();
+    while !romaji.is_empty() {
+        let bytes = romaji.as_bytes();
         if bytes.starts_with(b"nn")
             && (bytes.len() == 2 || !matches!(bytes[2], b'a' | b'e' | b'i' | b'o' | b'u' | b'y'))
         {
-            length += 1;
-            rest = &rest[2..];
+            text.push('ん');
+            romaji = &romaji[2..];
             continue;
         }
         if bytes.len() >= 2
             && bytes[0] == bytes[1]
             && !matches!(bytes[0], b'a' | b'e' | b'i' | b'n' | b'o' | b'u')
         {
-            length += 1;
-            rest = &rest[1..];
+            text.push('っ');
+            romaji = &romaji[1..];
             continue;
         }
         if bytes[0] == b'n'
             && (bytes.len() == 1
                 || (bytes[1] != b'y' && !matches!(bytes[1], b'a' | b'e' | b'i' | b'o' | b'u')))
         {
-            length += 1;
-            rest = &rest[1..];
+            text.push('ん');
+            romaji = &romaji[1..];
             continue;
         }
         if let Some((roman, kana)) = ROMAJI
             .iter()
-            .filter(|(roman, _)| rest.starts_with(roman))
+            .filter(|(roman, _)| romaji.starts_with(roman))
             .max_by_key(|(roman, _)| roman.len())
         {
-            length += kana.chars().count();
-            rest = &rest[roman.len()..];
+            text.push_str(kana);
+            romaji = &romaji[roman.len()..];
         } else {
-            length += 1;
-            rest = &rest[1..];
+            // Convert an unpaired ASCII letter to its full-width form.
+            text.push(char::from_u32(u32::from(bytes[0]) + 0xfee0).unwrap());
+            romaji = &romaji[1..];
         }
     }
-    Some(length)
+    Some(text)
 }
 
 const ROMAJI: &[(&str, &str)] = &[
@@ -409,7 +406,6 @@ pub struct InputState {
     held: u8,
     used_with_other_key: bool,
     last_left_tap_ms: Option<u64>,
-    last_right_tap_ms: Option<u64>,
     typed: Vec<RecordedKey>,
     recording_blocked: bool,
     english_selected: bool,
@@ -420,6 +416,14 @@ pub struct InputState {
 impl InputState {
     pub fn set_native_english_conversion(&mut self, enabled: bool) {
         self.native_english_conversion = enabled;
+    }
+
+    pub fn japanese_source_selected(&mut self, changed: bool) {
+        self.english_selected = false;
+        // Selecting an already-active source can leave its composition open.
+        if changed {
+            self.recording_blocked = false;
+        }
     }
 
     pub fn flags_changed(
@@ -458,24 +462,12 @@ impl InputState {
             self.held &= !mask;
             if self.used_with_other_key {
                 self.last_left_tap_ms = None;
-                self.last_right_tap_ms = None;
                 return None;
             }
             if keycode == RIGHT_COMMAND {
-                self.last_left_tap_ms = None;
-                self.typed.clear();
-                self.recording_blocked = false;
-                self.english_selected = false;
-                let repeated = self.last_right_tap_ms.is_some_and(|last| {
-                    now_ms.saturating_sub(last) <= DOUBLE_TAP.as_millis() as u64
-                });
-                self.last_right_tap_ms = Some(now_ms);
-                if repeated {
-                    return None;
-                }
+                self.interrupt_recording();
                 return Some(Action::Switch(Side::Japanese));
             }
-            self.last_right_tap_ms = None;
             self.english_selected = true;
             let double = self
                 .last_left_tap_ms
@@ -521,7 +513,6 @@ impl InputState {
             // Typing after the first left tap cancels its Japanese candidate.
             self.typed.clear();
         }
-        self.last_right_tap_ms = None;
         match keycode {
             102 | 104 => {
                 self.reset_recording();
@@ -577,7 +568,6 @@ impl InputState {
         self.typed.clear();
         self.last_left_tap_ms = None;
         self.last_left_tap_native = false;
-        self.last_right_tap_ms = None;
     }
 }
 
@@ -720,19 +710,19 @@ mod tests {
     }
 
     #[test]
-    fn rapid_right_taps_send_only_one_japanese_switch() {
+    fn rapid_right_taps_request_source_selection_even_after_a_click() {
         let mut state = InputState::default();
         assert_eq!(
             tap(&mut state, RIGHT_COMMAND, 0),
             Some(Action::Switch(Side::Japanese))
         );
-        assert_eq!(tap(&mut state, RIGHT_COMMAND, 100), None);
         assert_eq!(
-            tap(
-                &mut state,
-                RIGHT_COMMAND,
-                100 + DOUBLE_TAP.as_millis() as u64 + 2
-            ),
+            tap(&mut state, RIGHT_COMMAND, 100),
+            Some(Action::Switch(Side::Japanese))
+        );
+        state.interrupt_recording();
+        assert_eq!(
+            tap(&mut state, RIGHT_COMMAND, 200),
             Some(Action::Switch(Side::Japanese))
         );
     }
@@ -894,7 +884,7 @@ mod tests {
     }
 
     #[test]
-    fn physical_romaji_has_the_expected_hiragana_length() {
+    fn physical_romaji_has_the_expected_hiragana() {
         let keys = |codes: &[u16]| {
             codes
                 .iter()
@@ -904,12 +894,15 @@ mod tests {
                 })
                 .collect::<Vec<_>>()
         };
-        assert_eq!(hiragana_length(&keys(&[0, 40, 0])), Some(2)); // aka -> あか
-        assert_eq!(
-            hiragana_length(&keys(&[40, 31, 45, 45, 34, 17, 34, 4, 0])),
-            Some(5)
-        ); // konnitiha
-        assert_eq!(hiragana_length(&keys(&[40, 16, 31, 32])), Some(3)); // kyou -> きょう
+        for (codes, expected) in [
+            (&[0, 40, 0][..], "あか"),
+            (&[17, 17, 14][..], "って"),
+            (&[40, 31, 45, 45, 34, 17, 34, 4, 0][..], "こんにちは"),
+            (&[40, 16, 31, 32][..], "きょう"),
+        ] {
+            let roman = roman_text(&keys(codes)).unwrap();
+            assert_eq!(hiragana_text(&roman).as_deref(), Some(expected));
+        }
     }
 
     #[test]
@@ -999,20 +992,25 @@ mod tests {
     }
 
     #[test]
-    fn romaji_length_handles_n_gemination_and_compound_kana() {
-        assert_eq!(hiragana_length(&keys("kan")), Some(2)); // かん
-        assert_eq!(hiragana_length(&keys("nn")), Some(1)); // ん
-        assert_eq!(hiragana_length(&keys("konnnitiha")), Some(5)); // こんにちは
-        assert_eq!(hiragana_length(&keys("kanna")), Some(3));
-        assert_eq!(hiragana_length(&keys("kitte")), Some(3)); // きって
-        assert_eq!(hiragana_length(&keys("gakkou")), Some(4)); // がっこう
-        assert_eq!(hiragana_length(&keys("shashin")), Some(4)); // しゃしん
+    fn romaji_text_handles_n_gemination_and_compound_kana() {
+        for (roman, kana) in [
+            ("kan", "かん"),
+            ("nn", "ん"),
+            ("konnnitiha", "こんにちは"),
+            ("kanna", "かんな"),
+            ("tte", "って"),
+            ("kitte", "きって"),
+            ("gakkou", "がっこう"),
+            ("shashin", "しゃしん"),
+        ] {
+            assert_eq!(hiragana_text(roman).as_deref(), Some(kana), "{roman}");
+        }
     }
 
     #[test]
-    fn mixed_latin_and_kana_output_has_the_correct_length() {
-        assert_eq!(hiragana_length(&keys("kfa")), Some(3)); // ｋふぁ
-        assert_eq!(hiragana_length(&keys("q")), Some(1)); // ｑ
+    fn mixed_latin_and_kana_output_uses_full_width_latin() {
+        assert_eq!(hiragana_text("kfa").as_deref(), Some("ｋふぁ"));
+        assert_eq!(hiragana_text("q").as_deref(), Some("ｑ"));
     }
 
     #[test]
@@ -1071,8 +1069,8 @@ mod tests {
             ("maxtucha", "まっちゃ"),
         ] {
             assert_eq!(
-                hiragana_length(&keys(roman)),
-                Some(kana.chars().count()),
+                hiragana_text(roman).as_deref(),
+                Some(kana),
                 "{roman} → {kana}"
             );
         }
@@ -1166,20 +1164,16 @@ mod tests {
             ("kanna", "かんな"),
             ("konnya", "こんにゃ"),
         ] {
-            assert_eq!(
-                hiragana_length(&keys(roman)),
-                Some(kana.chars().count()),
-                "{roman}"
-            );
+            assert_eq!(hiragana_text(roman).as_deref(), Some(kana), "{roman}");
         }
     }
 
     #[test]
-    fn alphabetic_symbol_shortcuts_count_as_one_rendered_character() {
-        for roman in ["zh", "zj", "zk", "zl"] {
-            assert_eq!(hiragana_length(&keys(roman)), Some(1));
+    fn alphabetic_symbol_shortcuts_use_the_expected_arrows() {
+        for (roman, arrow) in [("zh", "←"), ("zj", "↓"), ("zk", "↑"), ("zl", "→")] {
+            assert_eq!(hiragana_text(roman).as_deref(), Some(arrow));
         }
-        assert_eq!(hiragana_length(&keys("kazh")), Some(2)); // か←
+        assert_eq!(hiragana_text("kazh").as_deref(), Some("か←"));
     }
 
     #[test]
@@ -1212,13 +1206,14 @@ mod tests {
 
     #[test]
     fn repeated_conversions_preserve_text_and_timing_boundaries() {
-        // Reuse one state across 4,968 conversions, including left/right
+        // Reuse one state across 5,520 conversions, including left/right
         // switches, successful replacements, and expired double taps.
         let mut state = InputState::default();
         let mut now = 1_000;
         for delay in 1..=552 {
             for (roman, kana) in [
                 ("aka", "あか"),
+                ("tte", "って"),
                 ("konnnitiha", "こんにちは"),
                 ("gakkou", "がっこう"),
                 ("shashin", "しゃしん"),
@@ -1232,6 +1227,7 @@ mod tests {
                     tap(&mut state, RIGHT_COMMAND, now),
                     Some(Action::Switch(Side::Japanese))
                 );
+                state.japanese_source_selected(true);
                 let recorded = keys(roman);
                 for key in &recorded {
                     state.key_down(key.keycode.into(), key.shift, false);
@@ -1247,8 +1243,9 @@ mod tests {
                         Some(Action::ReplaceWithEnglish(recorded.clone())),
                         "{roman}, {delay}ms"
                     );
-                    assert_eq!(hiragana_length(&recorded), Some(kana.chars().count()));
-                    assert_eq!(roman_text(&recorded).as_deref(), Some(roman));
+                    let replacement = roman_text(&recorded).unwrap();
+                    assert_eq!(replacement, roman);
+                    assert_eq!(hiragana_text(&replacement).as_deref(), Some(kana));
                 } else {
                     assert_eq!(action, Some(Action::Switch(Side::English)));
                 }
@@ -1291,6 +1288,7 @@ mod tests {
             state.key_down(51, false, false);
             if japanese_key == RIGHT_COMMAND {
                 tap(&mut state, RIGHT_COMMAND, 100);
+                state.japanese_source_selected(true);
             } else {
                 state.key_down(japanese_key, false, false);
             }
@@ -1303,6 +1301,36 @@ mod tests {
                 Some(Action::ReplaceWithEnglish(keys("aka")))
             );
         }
+    }
+
+    #[test]
+    fn failed_japanese_source_selection_does_not_record_english_input() {
+        let mut state = InputState::default();
+        tap(&mut state, LEFT_COMMAND, 0);
+        assert_eq!(
+            tap(&mut state, RIGHT_COMMAND, 100),
+            Some(Action::Switch(Side::Japanese))
+        );
+        for key in keys("aka") {
+            state.key_down(key.keycode.into(), false, false);
+        }
+        assert!(state.typed.is_empty());
+    }
+
+    #[test]
+    fn selecting_the_current_japanese_source_does_not_resume_an_interrupted_composition() {
+        let mut state = InputState::default();
+        for key in keys("aka") {
+            state.key_down(key.keycode.into(), false, false);
+        }
+        tap(&mut state, RIGHT_COMMAND, 0);
+        state.japanese_source_selected(false);
+        state.key_down(0, false, false);
+        assert!(state.typed.is_empty());
+
+        state.key_down(36, false, false); // Return confirms the current composition.
+        state.key_down(0, false, false);
+        assert_eq!(state.typed, keys("a"));
     }
 
     #[test]
@@ -1406,9 +1434,9 @@ mod tests {
     }
 
     #[test]
-    fn shifted_input_does_not_use_a_lowercase_deletion_estimate() {
+    fn shifted_input_does_not_predict_kana_for_replacement() {
         for roman in ["Ka", "Kya", "KANJI", "aKa"] {
-            assert_eq!(hiragana_length(&keys(roman)), None);
+            assert_eq!(hiragana_text(roman), None);
             assert_eq!(roman_text(&keys(roman)).as_deref(), Some(roman));
         }
     }

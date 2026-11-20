@@ -9,6 +9,18 @@ extern bool start_event_monitoring(void);
 extern bool is_event_monitoring(void);
 extern void mark_update_ready(void);
 
+bool select_japanese_input_source(bool *changed) {
+    TISInputSourceRef source = TISCopyInputSourceForLanguage(CFSTR("ja"));
+    if (!source) return false;
+
+    bool alreadySelected = TISGetInputSourceProperty(source,
+        kTISPropertyInputSourceIsSelected) == kCFBooleanTrue;
+    bool succeeded = alreadySelected || TISSelectInputSource(source) == noErr;
+    *changed = succeeded && !alreadySelected;
+    CFRelease(source);
+    return succeeded;
+}
+
 bool uses_native_english_conversion(void) {
     TISInputSourceRef source = TISCopyCurrentKeyboardInputSource();
     if (!source) return false;
@@ -36,41 +48,84 @@ bool uses_native_english_conversion(void) {
 @property(strong) CmdKanaUpdater *updater;
 @end
 
-bool replace_previous_text(CFIndex length, const char *replacementUTF8) {
-    @autoreleasepool {
-        if (length <= 0 || !replacementUTF8) return false;
-        AXUIElementRef system = AXUIElementCreateSystemWide();
-        AXUIElementRef focused = NULL;
-        CFTypeRef rangeRef = NULL;
-        bool replaced = false;
+static CFTypeRef copy_ax_attribute(AXUIElementRef element, CFStringRef attribute) {
+    CFTypeRef value = NULL;
+    if (AXUIElementCopyAttributeValue(element, attribute, &value) == kAXErrorSuccess) {
+        return value;
+    }
+    return NULL;
+}
 
-        if (AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute,
-                (CFTypeRef *)&focused) == kAXErrorSuccess && focused &&
-            AXUIElementCopyAttributeValue(focused, kAXSelectedTextRangeAttribute,
-                &rangeRef) == kAXErrorSuccess && rangeRef &&
-            CFGetTypeID(rangeRef) == AXValueGetTypeID()) {
-            CFRange original;
-            if (AXValueGetValue((AXValueRef)rangeRef, kAXValueCFRangeType, &original) &&
-                original.length == 0 && original.location >= length) {
-                CFRange target = CFRangeMake(original.location - length, length);
-                AXValueRef targetRef = AXValueCreate(kAXValueCFRangeType, &target);
-                NSString *replacement = [NSString stringWithUTF8String:replacementUTF8];
-                if (replacement && AXUIElementSetAttributeValue(focused,
-                        kAXSelectedTextRangeAttribute, targetRef) == kAXErrorSuccess) {
-                    replaced = AXUIElementSetAttributeValue(focused,
-                        kAXSelectedTextAttribute,
-                        (__bridge CFStringRef)replacement) == kAXErrorSuccess;
-                    if (!replaced) {
-                        AXValueRef originalRef = AXValueCreate(kAXValueCFRangeType, &original);
-                        AXUIElementSetAttributeValue(focused,
-                            kAXSelectedTextRangeAttribute, originalRef);
-                        CFRelease(originalRef);
-                    }
-                }
-                CFRelease(targetRef);
+static bool read_selected_range(AXUIElementRef element, CFRange *range) {
+    CFTypeRef value = copy_ax_attribute(element, kAXSelectedTextRangeAttribute);
+    if (!value) return false;
+    bool valid = CFGetTypeID(value) == AXValueGetTypeID()
+        && AXValueGetValue((AXValueRef)value, kAXValueCFRangeType, range);
+    CFRelease(value);
+    return valid;
+}
+
+static bool replace_verified_text(AXUIElementRef focused, CFStringRef expected,
+        CFStringRef katakana, CFStringRef replacement) {
+    CFIndex length = CFStringGetLength(expected);
+    CFRange original;
+    Boolean settable = false;
+    if (!read_selected_range(focused, &original) || original.length != 0
+            || original.location < length
+            || AXUIElementIsAttributeSettable(focused, kAXSelectedTextAttribute, &settable)
+                != kAXErrorSuccess || !settable) {
+        return false;
+    }
+
+    CFRange target = CFRangeMake(original.location - length, length);
+    AXValueRef targetRef = AXValueCreate(kAXValueCFRangeType, &target);
+    AXValueRef originalRef = AXValueCreate(kAXValueCFRangeType, &original);
+    CFTypeRef observed = NULL;
+    CFRange current;
+    bool replaced = false;
+
+    // Verify the actual text without changing the selection in the client.
+    if (targetRef && originalRef && AXUIElementCopyParameterizedAttributeValue(focused,
+            kAXStringForRangeParameterizedAttribute, targetRef, &observed) == kAXErrorSuccess
+            && observed && (CFEqual(observed, expected) || (katakana && CFEqual(observed, katakana)))
+            && read_selected_range(focused, &current) && current.length == 0
+            && current.location == original.location) {
+        // Some controls accept the request but adjust the selection range.
+        if (AXUIElementSetAttributeValue(focused, kAXSelectedTextRangeAttribute, targetRef)
+                == kAXErrorSuccess && read_selected_range(focused, &current)
+                && current.location == target.location && current.length == target.length) {
+            CFTypeRef selected = copy_ax_attribute(focused, kAXSelectedTextAttribute);
+            if (selected && CFEqual(selected, observed)) {
+                replaced = AXUIElementSetAttributeValue(focused, kAXSelectedTextAttribute,
+                    replacement) == kAXErrorSuccess;
             }
+            if (selected) CFRelease(selected);
         }
-        if (rangeRef) CFRelease(rangeRef);
+        if (!replaced) {
+            AXUIElementSetAttributeValue(focused, kAXSelectedTextRangeAttribute, originalRef);
+        }
+    }
+    if (observed) CFRelease(observed);
+    if (originalRef) CFRelease(originalRef);
+    if (targetRef) CFRelease(targetRef);
+    return replaced;
+}
+
+bool replace_previous_text(const char *expectedUTF8, const char *replacementUTF8) {
+    @autoreleasepool {
+        if (!expectedUTF8 || !replacementUTF8) return false;
+        NSString *expected = [NSString stringWithUTF8String:expectedUTF8];
+        NSString *replacement = [NSString stringWithUTF8String:replacementUTF8];
+        if (expected.length == 0 || !replacement) return false;
+        NSString *katakana = [expected stringByApplyingTransform:NSStringTransformHiraganaToKatakana
+            reverse:NO];
+
+        AXUIElementRef system = AXUIElementCreateSystemWide();
+        if (!system) return false;
+        CFTypeRef focused = copy_ax_attribute(system, kAXFocusedUIElementAttribute);
+        bool replaced = focused && CFGetTypeID(focused) == AXUIElementGetTypeID()
+            && replace_verified_text((AXUIElementRef)focused, (__bridge CFStringRef)expected,
+                (__bridge CFStringRef)katakana, (__bridge CFStringRef)replacement);
         if (focused) CFRelease(focused);
         CFRelease(system);
         return replaced;

@@ -16,7 +16,7 @@ The pure Rust tests cover:
 
 - left/right Command single taps;
 - left double-tap timing boundaries and exact input replay;
-- right double taps remaining Kana-only;
+- rapid right taps requesting only Japanese source selection, even across mouse events;
 - shortcut and simultaneous-Command suppression;
 - history boundaries, safe cancellation after deletion, and the 128-key limit;
 - US-keyboard keycode-to-romaji output;
@@ -25,7 +25,7 @@ The pure Rust tests cover:
 - small kana (`xtsu`, `lya`), extended syllables (`thi`, `dhu`), `nn` pairs, and alphabetic symbol shortcuts;
 - all overlapping Command press/release orders, Command-click, and modifier-only chords;
 - English-mode input suppression and resuming Kana recording after cancellation;
-- 4,968 consecutive conversion attempts on one state, with release intervals from 1–552 ms.
+- 5,520 consecutive conversion attempts on one state, with release intervals from 1–552 ms.
 - Google/Mozc native conversion dispatch, input-source changes after the first tap, empty/overflowed history, and the 499/500/550/551 ms boundaries.
 
 ### Linux input checks
@@ -61,8 +61,11 @@ Automated tests cannot reproduce macOS TCC permissions, every focused text contr
 | Permissions | Fresh launch reports both permissions accurately and opens each Settings pane. |
 | Permission recovery | Launch without permission, grant both permissions while the app remains open, and verify switching starts without restarting. |
 | Single tap | Left Command selects Google Japanese Roman; right Command selects Google Japanese Kana. |
+| Japanese switch | In Apple's Japanese IME and Google Japanese Input, commit a word, then tap right Command twice rapidly with and without a click, a selection change, or a preceding physical Kana tap. Verify that right Command preserves committed text, the selection, and the caret. Repeat with Japanese already active and after switching from English. |
+| Typing after a Japanese switch | Place the caret between existing text, press right Command once, then type `tte` and press Return. Verify that `って` is inserted and that both sides of the text are preserved. Test from English and with Japanese already selected. |
 | Shortcuts | Command-C/V/Z and application shortcuts remain unchanged. |
 | Double tap | `あか` becomes `aka`; `こんにちは` becomes its recorded romaji without visible cursor rewind in supported fields. |
+| Replacement range | Insert `tte` between existing text and left double-tap. In supported fields, only `って` becomes `tte`. Repeat with a mismatching suffix or an active selection and verify that all text is preserved. |
 | Cancellation | For non-Google input methods, after Delete or more than 128 physical keys, a left double tap leaves the text unchanged. After a boundary or a right Command switch, the next Japanese word converts normally. Google/Mozc uses its own remaining composition instead of the recorded word. |
 | Modifier chords | Command-click, Shift/Control/Option with Command, and all overlapping left/right Command release orders do not switch modes; the next standalone tap still works. |
 | English input | After a left Command switch, typing `kya` and double-tapping left Command leaves exactly `kya`; switching back with right Command restores Japanese conversion. |

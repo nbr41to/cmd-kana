@@ -4,6 +4,11 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+## [0.10.4] - 2026-11-20
+
+- Select the Japanese input source directly on a right Command tap to avoid triggering Kana reconversion.
+- Verify the text and selection range before replacing a word through Accessibility.
+
 ## [0.10.3] - 2026-11-19
 
 - Pause input recording after caret movement or text selection during composition. Resume at the next input boundary.

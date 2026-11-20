@@ -1,4 +1,4 @@
-//! Left Command sends the native macOS Eisu key; Right Command sends Kana.
+//! Left Command sends the native macOS Eisu key. Right Command selects Japanese.
 //! A Command key only triggers when pressed and released on its own.
 
 use std::ffi::{c_char, c_int, c_void, CString};
@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 mod input;
 mod update;
-use input::{hiragana_length, roman_text, Action, InputState, RecordedKey, Side};
+use input::{hiragana_text, roman_text, Action, InputState, RecordedKey, Side};
 
 type CFTypeRef = *const c_void;
 type CFStringRef = *const c_void;
@@ -35,7 +35,6 @@ const CONTROL_FLAG: u64 = 1 << 18;
 const OPTION_FLAG: u64 = 1 << 19;
 const COMMAND_FLAG: u64 = 1 << 20;
 const JIS_EISU: u16 = 102;
-const JIS_KANA: u16 = 104;
 const SYNTHETIC_MARKER: i64 = 0x0043_4d44_4b41_4e41;
 const LOCK_EX: c_int = 2;
 const LOCK_NB: c_int = 4;
@@ -77,7 +76,9 @@ extern "C" {
 extern "C" {
     fn run_menu_bar_app();
     fn show_update_install_error(message: *const c_char);
-    fn replace_previous_text(length: CFIndex, replacement_utf8: *const c_char) -> bool;
+    fn replace_previous_text(expected_utf8: *const c_char, replacement_utf8: *const c_char)
+        -> bool;
+    fn select_japanese_input_source(changed: *mut bool) -> bool;
     fn uses_native_english_conversion() -> bool;
     fn getuid() -> u32;
     fn kill(pid: c_int, signal: c_int) -> c_int;
@@ -169,38 +170,31 @@ pub extern "C" fn start_event_monitoring() -> bool {
     true
 }
 
-unsafe fn post_key(keycode: u16, flags: u64) {
+unsafe fn post_eisu_key() {
     for down in [true, false] {
-        let event = CGEventCreateKeyboardEvent(ptr::null(), keycode, down);
+        let event = CGEventCreateKeyboardEvent(ptr::null(), JIS_EISU, down);
         if event.is_null() {
             continue;
         }
-        CGEventSetFlags(event, flags);
+        CGEventSetFlags(event, 0);
         CGEventSetIntegerValueField(event, 42, SYNTHETIC_MARKER);
         CGEventPost(0, event); // kCGHIDEventTap
         CFRelease(event);
     }
 }
 
-unsafe fn switch_to(side: Side) {
-    post_key(
-        match side {
-            Side::English => JIS_EISU,
-            Side::Japanese => JIS_KANA,
-        },
-        0,
-    );
-}
-
 unsafe fn replace_with_english(keys: Vec<RecordedKey>) {
-    let Some(rendered_length) = hiragana_length(&keys) else {
+    let Some(roman) = roman_text(&keys) else {
         return;
     };
-    let Some(roman) = roman_text(&keys).and_then(|text| CString::new(text).ok()) else {
+    let Some(expected) = hiragana_text(&roman) else {
         return;
     };
-    if replace_previous_text(rendered_length as CFIndex, roman.as_ptr()) {
-        switch_to(Side::English);
+    let (Ok(expected), Ok(roman)) = (CString::new(expected), CString::new(roman)) else {
+        return;
+    };
+    if replace_previous_text(expected.as_ptr(), roman.as_ptr()) {
+        post_eisu_key();
     }
 }
 
@@ -233,7 +227,7 @@ extern "C" fn event_callback(
             match event_type {
                 FLAGS_CHANGED => {
                     let flags = CGEventGetFlags(event);
-                    if keycode == input::LEFT_COMMAND || keycode == input::RIGHT_COMMAND {
+                    if keycode == input::LEFT_COMMAND {
                         state
                             .input
                             .set_native_english_conversion(uses_native_english_conversion());
@@ -262,14 +256,28 @@ extern "C" fn event_callback(
         }
 
         match action {
-            Some(Action::Switch(side)) => switch_to(side),
+            Some(Action::Switch(Side::English)) => post_eisu_key(),
+            Some(Action::Switch(Side::Japanese)) => {
+                // A native Kana double tap can reconvert text or undo an IME
+                // commit. Select the source without delivering a Kana event.
+                let mut changed = false;
+                if select_japanese_input_source(&mut changed) {
+                    if let Some(state) = STATE.get() {
+                        state
+                            .lock()
+                            .unwrap()
+                            .input
+                            .japanese_source_selected(changed);
+                    }
+                }
+            }
             Some(Action::ReplaceWithEnglish(keys)) => replace_with_english(keys),
             Some(Action::NativeEnglishDoubleTap) => {
                 // Google's native double-tap window is 500 ms, while ours is
                 // 550 ms. A fresh tight pair also handles the 500–550 ms edge.
                 // Do not edit or delete IME-owned marked text through AX.
-                switch_to(Side::English);
-                switch_to(Side::English);
+                post_eisu_key();
+                post_eisu_key();
             }
             None => {}
         }
