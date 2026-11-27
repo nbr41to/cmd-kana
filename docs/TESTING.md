@@ -16,7 +16,7 @@ The pure Rust tests cover:
 
 - left/right Command single taps;
 - left double-tap timing boundaries and exact input replay;
-- rapid right taps requesting only Japanese source selection, even across mouse events;
+- Kana recovery timing across right taps, mouse events, selection, physical Kana and monitoring interruptions;
 - shortcut and simultaneous-Command suppression;
 - history boundaries, safe cancellation after deletion, and the 128-key limit;
 - US-keyboard keycode-to-romaji output;
@@ -63,6 +63,7 @@ Automated tests cannot reproduce macOS TCC permissions, every focused text contr
 | Single tap | Left Command selects Google Japanese Roman; right Command selects Google Japanese Kana. |
 | Japanese switch | In Apple's Japanese IME and Google Japanese Input, commit a word, then tap right Command twice rapidly with and without a click, a selection change, or a preceding physical Kana tap. Verify that right Command preserves committed text, the selection, and the caret. Repeat with Japanese already active and after switching from English. |
 | Typing after a Japanese switch | Place the caret between existing text, press right Command once, then type `tte` and press Return. Verify that `って` is inserted and that both sides of the text are preserved. Test from English and with Japanese already selected. |
+| Japanese mode recovery | If the input menu shows Japanese while the focused field still types Roman letters, tap right Command once. Verify that the next `tte` becomes `って` in that field. Also tap right Command repeatedly while Japanese is selected, including after clicking or selecting text. Confirm that committed text and the selection are preserved and reconversion does not start. |
 | Shortcuts | Command-C/V/Z and application shortcuts remain unchanged. |
 | Double tap | `あか` becomes `aka`; `こんにちは` becomes its recorded romaji without visible cursor rewind in supported fields. |
 | Replacement range | Insert `tte` between existing text and left double-tap. In supported fields, only `って` becomes `tte`. Repeat with a mismatching suffix or an active selection and verify that all text is preserved. |

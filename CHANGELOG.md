@@ -4,6 +4,11 @@ All notable changes are documented here. This project follows Semantic Versionin
 
 ## [Unreleased]
 
+## [0.10.5] - 2026-11-27
+
+- Reactivate Japanese input on a right Command tap when macOS already shows Japanese but the focused IME is still typing Roman text.
+- Keep a minimum interval between observed Kana events and cmd-kana's recovery events across clicks, selection changes, and event monitoring restarts.
+
 ## [0.10.4] - 2026-11-20
 
 - Select the Japanese input source directly on a right Command tap to avoid triggering Kana reconversion.

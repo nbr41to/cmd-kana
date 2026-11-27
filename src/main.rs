@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 mod input;
 mod update;
-use input::{hiragana_text, roman_text, Action, InputState, RecordedKey, Side};
+use input::{hiragana_text, roman_text, Action, InputState, KanaKeyTiming, RecordedKey, Side};
 
 type CFTypeRef = *const c_void;
 type CFStringRef = *const c_void;
@@ -55,6 +55,7 @@ extern "C" {
     fn CGEventSetFlags(event: CGEventRef, flags: u64);
     fn CGEventCreateKeyboardEvent(source: CFTypeRef, keycode: u16, down: bool) -> CGEventRef;
     fn CGEventPost(tap: u32, event: CGEventRef);
+    fn CGEventTapPostEvent(proxy: CGEventTapProxy, event: CGEventRef);
     fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
     fn CGRequestListenEventAccess() -> bool;
     fn CGRequestPostEventAccess() -> bool;
@@ -87,6 +88,7 @@ extern "C" {
 
 struct State {
     input: InputState,
+    kana_timing: KanaKeyTiming,
     tap: Option<CFMachPortRef>,
 }
 
@@ -95,6 +97,10 @@ unsafe impl Send for State {}
 static STATE: OnceLock<Mutex<State>> = OnceLock::new();
 static STARTED_AT: OnceLock<Instant> = OnceLock::new();
 static INSTANCE_LOCK: OnceLock<File> = OnceLock::new();
+
+fn elapsed_ms() -> u64 {
+    STARTED_AT.get().unwrap().elapsed().as_millis() as u64
+}
 
 fn wait_for_previous_instance() {
     let mut args = std::env::args();
@@ -159,6 +165,8 @@ pub extern "C" fn start_event_monitoring() -> bool {
     if tap.is_null() {
         return false;
     }
+    // A physical Kana may have been pressed before monitoring started.
+    state.kana_timing.observe(elapsed_ms());
     unsafe {
         let source = CFMachPortCreateRunLoopSource(ptr::null(), tap, 0);
         CFRunLoopAddSource(CFRunLoopGetCurrent(), source, kCFRunLoopCommonModes);
@@ -170,15 +178,19 @@ pub extern "C" fn start_event_monitoring() -> bool {
     true
 }
 
-unsafe fn post_eisu_key() {
+unsafe fn post_switch_key(keycode: u16, proxy: Option<CGEventTapProxy>) {
     for down in [true, false] {
-        let event = CGEventCreateKeyboardEvent(ptr::null(), JIS_EISU, down);
+        let event = CGEventCreateKeyboardEvent(ptr::null(), keycode, down);
         if event.is_null() {
             continue;
         }
         CGEventSetFlags(event, 0);
         CGEventSetIntegerValueField(event, 42, SYNTHETIC_MARKER);
-        CGEventPost(0, event); // kCGHIDEventTap
+        if let Some(proxy) = proxy {
+            CGEventTapPostEvent(proxy, event);
+        } else {
+            CGEventPost(0, event); // kCGHIDEventTap
+        }
         CFRelease(event);
     }
 }
@@ -194,12 +206,12 @@ unsafe fn replace_with_english(keys: Vec<RecordedKey>) {
         return;
     };
     if replace_previous_text(expected.as_ptr(), roman.as_ptr()) {
-        post_eisu_key();
+        post_switch_key(JIS_EISU, None);
     }
 }
 
 extern "C" fn event_callback(
-    _: CGEventTapProxy,
+    proxy: CGEventTapProxy,
     event_type: u32,
     event: CGEventRef,
     _: *mut c_void,
@@ -210,6 +222,7 @@ extern "C" fn event_callback(
                 let mut state = state.lock().unwrap();
                 // Releases and composition boundaries may have been missed.
                 state.input = InputState::default();
+                state.kana_timing.observe(elapsed_ms());
                 if let Some(tap) = state.tap {
                     CGEventTapEnable(tap, true);
                 }
@@ -232,15 +245,17 @@ extern "C" fn event_callback(
                             .input
                             .set_native_english_conversion(uses_native_english_conversion());
                     }
-                    let now_ms = STARTED_AT.get().unwrap().elapsed().as_millis() as u64;
                     action = state.input.flags_changed(
                         keycode,
-                        now_ms,
+                        elapsed_ms(),
                         flags & COMMAND_FLAG != 0,
                         flags & (SHIFT_FLAG | CONTROL_FLAG | OPTION_FLAG) != 0,
                     );
                 }
                 KEY_DOWN => {
+                    if keycode == i64::from(input::JIS_KANA) {
+                        state.kana_timing.observe(elapsed_ms());
+                    }
                     let flags = CGEventGetFlags(event);
                     state.input.key_down(
                         keycode,
@@ -256,18 +271,19 @@ extern "C" fn event_callback(
         }
 
         match action {
-            Some(Action::Switch(Side::English)) => post_eisu_key(),
+            Some(Action::Switch(Side::English)) => post_switch_key(JIS_EISU, None),
             Some(Action::Switch(Side::Japanese)) => {
-                // A native Kana double tap can reconvert text or undo an IME
-                // commit. Select the source without delivering a Kana event.
                 let mut changed = false;
                 if select_japanese_input_source(&mut changed) {
-                    if let Some(state) = STATE.get() {
-                        state
-                            .lock()
-                            .unwrap()
-                            .input
-                            .japanese_source_selected(changed);
+                    let reactivate = STATE.get().is_some_and(|state| {
+                        let mut state = state.lock().unwrap();
+                        state.input.japanese_source_selected(changed);
+                        !changed && state.kana_timing.reserve(elapsed_ms())
+                    });
+                    if reactivate {
+                        // The menu may already show Japanese while the focused
+                        // IME remains in Roman mode. Deliver one Kana in order.
+                        post_switch_key(input::JIS_KANA, Some(proxy));
                     }
                 }
             }
@@ -276,8 +292,8 @@ extern "C" fn event_callback(
                 // Google's native double-tap window is 500 ms, while ours is
                 // 550 ms. A fresh tight pair also handles the 500–550 ms edge.
                 // Do not edit or delete IME-owned marked text through AX.
-                post_eisu_key();
-                post_eisu_key();
+                post_switch_key(JIS_EISU, None);
+                post_switch_key(JIS_EISU, None);
             }
             None => {}
         }
@@ -305,6 +321,7 @@ fn main() {
         STATE
             .set(Mutex::new(State {
                 input: InputState::default(),
+                kana_timing: KanaKeyTiming::default(),
                 tap: None,
             }))
             .ok();

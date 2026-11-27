@@ -2,7 +2,33 @@ use std::time::Duration;
 
 pub const LEFT_COMMAND: i64 = 55;
 pub const RIGHT_COMMAND: i64 = 54;
+pub const JIS_KANA: u16 = 104;
 pub const DOUBLE_TAP: Duration = Duration::from_millis(550);
+
+#[derive(Default)]
+pub struct KanaKeyTiming {
+    last_down_ms: Option<u64>,
+}
+
+impl KanaKeyTiming {
+    pub fn observe(&mut self, now_ms: u64) {
+        self.last_down_ms = Some(now_ms);
+    }
+
+    pub fn reserve(&mut self, now_ms: u64) -> bool {
+        // Mozc can reconvert on Kana key-downs less than 500 ms apart.
+        // Keep a margin for event delivery and retain this time across clicks.
+        const QUIET_PERIOD_MS: u64 = 550;
+        if self
+            .last_down_ms
+            .is_some_and(|last| now_ms.saturating_sub(last) <= QUIET_PERIOD_MS)
+        {
+            return false;
+        }
+        self.observe(now_ms);
+        true
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Side {
@@ -712,19 +738,42 @@ mod tests {
     #[test]
     fn rapid_right_taps_request_source_selection_even_after_a_click() {
         let mut state = InputState::default();
+        let mut kana_timing = KanaKeyTiming::default();
         assert_eq!(
             tap(&mut state, RIGHT_COMMAND, 0),
             Some(Action::Switch(Side::Japanese))
         );
+        assert!(kana_timing.reserve(1));
         assert_eq!(
             tap(&mut state, RIGHT_COMMAND, 100),
             Some(Action::Switch(Side::Japanese))
         );
+        assert!(!kana_timing.reserve(101));
         state.interrupt_recording();
+        state.key_down(123, true, false); // Shift+Left selects text.
         assert_eq!(
             tap(&mut state, RIGHT_COMMAND, 200),
             Some(Action::Switch(Side::Japanese))
         );
+        assert!(!kana_timing.reserve(201));
+        assert!(kana_timing.reserve(552));
+    }
+
+    #[test]
+    fn kana_recovery_waits_after_a_physical_kana_or_monitoring_gap() {
+        let mut state = InputState::default();
+        let mut kana_timing = KanaKeyTiming::default();
+        state.key_down(i64::from(JIS_KANA), false, false);
+        kana_timing.observe(1_000);
+        for now in [1_001, 1_499, 1_500, 1_550] {
+            assert!(!kana_timing.reserve(now));
+        }
+        assert!(kana_timing.reserve(1_551));
+
+        // Restart monitoring with an unknown last physical key.
+        kana_timing.observe(2_000);
+        assert!(!kana_timing.reserve(2_001));
+        assert!(kana_timing.reserve(2_551));
     }
 
     #[test]
